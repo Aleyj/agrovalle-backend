@@ -95,7 +95,7 @@ app.post("/api/chatbot", async (req, res) => {
         Pregunta del usuario: "${pregunta}".
         Responde de forma concisa, útil y clara.`;
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
         const result = await model.generateContent(prompt);
         const respuesta = result.response.text();
 
