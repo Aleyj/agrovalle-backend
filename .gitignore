@@ -1,3 +1,7 @@
 node_modules/
 .env
+.env.*
+!.env.example
 manual.pdf
+# Evidencias y auditorias locales pueden contener detalles del equipo; no publicar.
+evidencia/
