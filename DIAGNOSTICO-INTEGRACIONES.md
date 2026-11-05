@@ -2,6 +2,33 @@
 
 Fecha: 4 de noviembre de 2026 (America/Lima).
 
+## Alertas automáticas: origen directo en Supabase y propuesta local
+
+El usuario confirmó que las lecturas llegan directamente a Supabase y que Resend
+solo registraba los reportes, no la alerta antigua. El código anterior solo evaluaba
+temperatura dentro de `/api/telemetria`; los INSERT directos no ejecutan esa ruta.
+Reportes y alertas de esa versión compartían transporte y `EMAIL_USER`, sin un
+destinatario fijo del compañero ni un segundo mecanismo automático en estos repositorios.
+El proceso externo que sigue enviando al compañero aún no está identificado. No hay
+evidencia para atribuirlo a Render; falta inspeccionar triggers/webhooks, funciones,
+cron y el emisor real con acceso administrativo. No se consultó ni cambió Supabase.
+
+Se prepararon cambios locales sin commit: destinatarios `ALERT_EMAIL_TO` y
+`REPORT_EMAIL_TO`, alertas Resend, HTML con contexto disponible y receptor autenticado
+`/api/webhooks/supabase/telemetria`. Un modo exclusivo `ALERT_TRIGGER` evita alertar
+desde Express y webhook a la vez. Las repeticiones de webhook usan la clave idempotente
+del proveedor, con su ventana de 24 horas; no se promete deduplicación permanente.
+Se mantuvieron el INSERT de telemetría y AgroBot. No se cambió `.env` ni producción.
+
+Ver [DIAGNOSTICO-ALERTAS.md](DIAGNOSTICO-ALERTAS.md) para hallazgos, pruebas simuladas,
+consultas opcionales de catálogo sin secretos y propuesta de configuración futura.
+El usuario eliminó `.env.example` en el commit posterior `498498e`; se respetó esa
+eliminación y se documentan los campos nuevos sin restaurar la plantilla.
+
+La suite final aprobó 36 pruebas, 0 fallidas: 29 de regresión y 7 nuevas, incluyendo
+los umbrales 29/30/35 en ambos modos. La prueba de duplicados verifica una fuente
+exclusiva y una única aceptación del proveedor simulado al repetir la misma clave.
+
 ## Preparación para publicación en ramas independientes
 
 El usuario confirmó aceptación de Resend y recepción en Gmail de la primera prueba

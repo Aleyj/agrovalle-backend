@@ -17,7 +17,7 @@ test('El timeout real del SDK conserva name Error y debe clasificarse como 504',
     assert.equal(errorChat(error).codigo, 'GEMINI_TIMEOUT');
 });
 
-const env = { EMAIL_USER: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
+const env = { EMAIL_USER: 'prueba@example.invalid', ALERT_EMAIL_TO: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
 const silent = { warn() {}, error() {}, info() {} };
 
 async function servidor(t, opciones = {}) {

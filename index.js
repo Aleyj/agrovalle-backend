@@ -3,6 +3,7 @@ const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
 const jwt = require("jsonwebtoken");
 const path = require("path");
+const { temperaturaAlta, construirAlerta, modoAlertas, autenticarWebhook, claveAlerta } = require('./alertas');
 const { cargarContexto, crearGenerador, errorChat, crearCorreo, registrarError, errorCorreo } = require('./integraciones');
 require("dotenv").config({ path: path.join(__dirname, '.env'), quiet: true });
 
@@ -15,6 +16,7 @@ function crearApp(opciones = {}) {
 
     const supabase = opciones.supabase || createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
     const transporter = opciones.correo || crearCorreo(env);
+    const correoAlertas = opciones.correoAlertas || opciones.correo || crearCorreo(env, 'alerta');
     const generarRespuesta = opciones.generarRespuesta || crearGenerador(env);
     const obtenerContexto = opciones.cargarContexto || (() => cargarContexto(undefined, logger));
 
@@ -36,7 +38,7 @@ function crearApp(opciones = {}) {
             const filasHtml = data.map(lec => `<tr><td>${lec.temperatura}°C</td><td>${lec.humedad}%</td><td>${new Date(lec.fecha_hora).toLocaleString()}</td></tr>`).join('');
             const mailOptions = {
                 from: env.EMAIL_USER,
-                to: env.EMAIL_USER,
+                to: env.REPORT_EMAIL_TO ?? env.EMAIL_USER,
                 subject: "📊 Reporte de Estado - AgroValle",
                 html: `<h2>Reporte de Sensores</h2><table border="1" cellpadding="5"><tr><th>Temperatura</th><th>Humedad</th><th>Fecha</th></tr>${filasHtml}</table>`
             };
@@ -62,20 +64,44 @@ function crearApp(opciones = {}) {
         const { error } = await supabase.from('telemetria').insert([{ dispositivo_id, humedad, temperatura, bomba_encendida }]);
         if (error) return res.status(500).json({ ok: false, error: error.message });
 
-        if (temperatura > 30) {
-            const mailOptions = {
-                from: env.EMAIL_USER,
-                to: env.EMAIL_USER,
-                subject: `🚨 ALERTA: Temperatura Crítica en ${dispositivo_id}`,
-                html: `<h2>Alerta de Sensores</h2><p>Temperatura: <b style="color:red;">${temperatura}°C</b></p>`
-            };
-            // No retrasar ni convertir en fallo el registro de telemetria ya guardado.
-            void Promise.resolve().then(() => transporter.sendMail(mailOptions))
-                .then(resultado => logger.info(resultado?.preparado ? 'Alerta preparada; no se envió correo' :
-                    resultado?.proveedor === 'resend' ? 'Alerta aceptada por Resend; entrega aún no confirmada' : 'Alerta aceptada por el servidor de correo'))
-                .catch(error => registrarError(logger, 'Alerta: fallo de correo', error));
-        }
+        // El INSERT y su respuesta permanecen iguales. Solo una fuente envia alertas.
+        try {
+            if (modoAlertas(env) === 'express' && temperaturaAlta(req.body)) {
+                const mailOptions = { ...construirAlerta(req.body), from: env.EMAIL_USER, to: env.ALERT_EMAIL_TO };
+                void Promise.resolve().then(() => correoAlertas.sendMail(mailOptions))
+                    .then(resultado => logger.info(resultado?.preparado ? 'Alerta preparada; no se envió correo' :
+                        resultado?.proveedor === 'resend' ? 'Alerta aceptada por Resend; entrega aún no confirmada' : 'Alerta aceptada por el servidor de correo'))
+                    .catch(error => registrarError(logger, 'Alerta: fallo de correo', error));
+            }
+        } catch (error) { registrarError(logger, 'Alerta: configuracion invalida', error); }
         res.json({ ok: true, mensaje: "Datos guardados" });
+    });
+
+    // Receptor de INSERT directo de Supabase. Nunca inserta ni actualiza telemetria.
+    app.post('/api/webhooks/supabase/telemetria', async (req, res) => {
+        const acceso = autenticarWebhook(req, env);
+        if (acceso) return res.status(acceso.status).json({ ok: false, codigo: acceso.codigo });
+        try {
+            if (modoAlertas(env) !== 'webhook') return res.status(409).json({ ok: false, codigo: 'WEBHOOK_DESACTIVADO' });
+            const evento = req.body;
+            if (evento?.type !== 'INSERT' || evento.schema !== 'public' || evento.table !== 'telemetria') {
+                return res.json({ ok: true, alerta: 'omitida', motivo: 'EVENTO_NO_APLICABLE' });
+            }
+            const idempotencyKey = claveAlerta(evento.record, env);
+            if (!temperaturaAlta(evento.record)) return res.json({ ok: true, alerta: 'omitida', motivo: 'TEMPERATURA_NO_SUPERA_30' });
+            const resultado = await correoAlertas.sendMail({ ...construirAlerta(evento.record), to: env.ALERT_EMAIL_TO }, { idempotencyKey });
+            logger.info(resultado?.preparado ? 'Alerta webhook preparada; no se envió correo' : 'Alerta webhook aceptada por Resend; entrega aún no confirmada');
+            return res.json({ ok: true, alerta: resultado?.preparado ? 'preparada' : 'aceptada',
+                entrega: resultado?.preparado ? 'no_enviada' : 'no_confirmada',
+                ...(resultado?.messageId ? { messageId: resultado.messageId } : {}),
+            });
+        } catch (error) {
+            registrarError(logger, 'Alerta webhook: fallo', error);
+            if (error.codigo === 'WEBHOOK_REGISTRO_INVALIDO') return res.status(400).json({ ok: false, codigo: error.codigo });
+            if (error.codigo === 'ALERT_TRIGGER_INVALIDO') return res.status(503).json({ ok: false, codigo: error.codigo });
+            const resultado = errorCorreo(error);
+            return res.status(resultado.status).json({ ok: false, codigo: resultado.codigo, error: resultado.error });
+        }
     });
 
     app.get("/api/historial", async (req, res) => {

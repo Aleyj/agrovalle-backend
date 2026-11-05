@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const dotenv = require('dotenv');
 
 const env = dotenv.parse(fs.readFileSync(path.join(__dirname, '.env')));
-const keys = ['SUPABASE_KEY', 'GEMINI_API_KEY', 'RESEND_API_KEY', 'EMAIL_PASS', 'EMAIL_USER', 'ADMIN_PASS', 'JWT_SECRET'];
+const keys = ['SUPABASE_KEY', 'GEMINI_API_KEY', 'RESEND_API_KEY', 'SUPABASE_WEBHOOK_SECRET', 'EMAIL_PASS', 'EMAIL_USER', 'ALERT_EMAIL_TO', 'REPORT_EMAIL_TO', 'ADMIN_PASS', 'JWT_SECRET'];
 const coincidencias = [];
 function revisar(contenido, repo, archivo, version) {
     for (const key of keys) {

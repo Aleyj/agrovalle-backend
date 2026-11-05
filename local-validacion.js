@@ -15,7 +15,7 @@ return {
             fecha: new Date().toISOString(),
             modo: 'preparacion-en-memoria', enviosSMTP: 0,
             fuente: opciones.fuente || 'consulta directa Supabase',
-            destinatario: 'EMAIL_USER (direccion omitida)',
+            destinatario: 'REPORT_EMAIL_TO (o EMAIL_USER de compatibilidad; direccion omitida)',
             asunto: mensaje.subject,
             lecturas: Math.max(0, (mensaje.html.match(/<tr>/g) || []).length - 1),
             bytesMIME: resultado.message.length,
@@ -35,7 +35,7 @@ const app = express();
 app.use((req, res, next) => {
     const lectura = req.method === 'GET' && req.path === '/api/historial';
     const preflight = req.method === 'OPTIONS';
-    const prueba = req.method === 'POST' && ['/api/login', '/api/chatbot', '/api/reporte'].includes(req.path);
+    const prueba = req.method === 'POST' && ['/api/login', '/api/chatbot', '/api/reporte', '/api/webhooks/supabase/telemetria'].includes(req.path);
     if (!lectura && !preflight && !prueba) return res.status(405).json({ ok: false, error: 'Ruta deshabilitada en la validación local.' });
     next();
 });

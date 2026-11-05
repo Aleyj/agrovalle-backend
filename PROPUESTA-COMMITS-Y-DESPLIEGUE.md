@@ -1,5 +1,29 @@
 # AgroValle: commits locales y plan de publicación
 
+## Corrección posterior de alertas, pendiente de revisión
+
+El usuario indica que reportes Resend ya funcionan publicados y que las lecturas
+se insertan directamente en Supabase. El emisor del correo antiguo al compañero
+sigue sin identificar; el código local anterior solo alertaba al pasar por Express.
+Ver `DIAGNOSTICO-ALERTAS.md` antes de cambiar configuración externa.
+
+Los cambios nuevos no se commitearon ni publicaron. Separan `REPORT_EMAIL_TO` y
+`ALERT_EMAIL_TO`, fuerzan Resend para alertas y añaden el receptor autenticado
+`POST /api/webhooks/supabase/telemetria`, sin cambiar el INSERT ni AgroBot.
+Para el flujo confirmado, proponer `ALERT_TRIGGER=webhook` y un secreto dedicado
+`SUPABASE_WEBHOOK_SECRET` de al menos 32 caracteres. Ambos destinos se configuran
+privadamente, una dirección por variable; no se permiten destinatarios desde React.
+
+Antes de activar un Database Webhook: identificar y desactivar con autorización
+el proceso antiguo, desplegar el receptor y sus variables, coordinar el corte de
+fuente y revisar timeouts. Express no notifica cuando está seleccionado el webhook;
+los eventos repetidos usan idempotencia Resend de 24 horas. No hay protección durable
+fuera de esa ventana ni cola persistente de recuperación en este cambio.
+
+La suite simulada pasó 36 casos sin Supabase real ni envíos. No se creó ningún hook
+en Supabase ni se cambió Render/Vercel. El commit de usuario `498498e` eliminó la
+plantilla `.env.example`; se respeta esa eliminación y los campos se documentan aquí.
+
 4 de noviembre de 2026. Backend y frontend tienen ramas independientes. No se realizó push, despliegue ni configuración de producción.
 
 El usuario confirmó aceptación del primer envío real de Resend y recepción en Gmail. Esta preparación no repitió el envío. Producción queda preparada para Resend HTTPS y `gemini-3.5-flash-lite`; las variables de los paneles siguen pendientes de configuración manual.

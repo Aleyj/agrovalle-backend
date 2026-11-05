@@ -17,7 +17,8 @@ function registrarError(logger, servicio, error) {
         'EENVELOPE', 'SMTP_NO_CONFIGURADO', 'CORREO_NO_ACEPTADO', 'GEMINI_NO_CONFIGURADO',
         'GEMINI_RESPUESTA_VACIA', 'EMAIL_PROVIDER_INVALIDO', 'EMAIL_DESTINATARIO_INVALIDO',
         'RESEND_NO_CONFIGURADO', 'RESEND_TIMEOUT', 'RESEND_RECHAZADO', 'RESEND_CUOTA',
-        'RESEND_NO_DISPONIBLE', 'RESEND_ERROR', 'RESEND_RESPUESTA_INVALIDA', 'EMAIL_VERIFY_NO_DISPONIBLE'];
+        'RESEND_NO_DISPONIBLE', 'RESEND_ERROR', 'RESEND_RESPUESTA_INVALIDA', 'EMAIL_VERIFY_NO_DISPONIBLE',
+        'ALERT_TRIGGER_INVALIDO', 'WEBHOOK_NO_CONFIGURADO', 'WEBHOOK_REGISTRO_INVALIDO', 'EMAIL_PROPOSITO_INVALIDO'];
     logger.error(servicio, {
         codigo: permitidos.includes(error.codigo || error.code) ? (error.codigo || error.code) : 'ERROR_PROVEEDOR',
         status: Number.isInteger(error.status) ? error.status : undefined,
@@ -86,10 +87,11 @@ function opcionesSMTP(env = process.env) {
     };
 }
 
-function destinatarioAutorizado(env) {
-    const destinatario = env.EMAIL_USER?.trim();
+function destinatarioAutorizado(env, proposito) {
+    const valor = proposito === 'alerta' ? env.ALERT_EMAIL_TO : (env.REPORT_EMAIL_TO ?? env.EMAIL_USER);
+    const destinatario = valor?.trim();
     if (!destinatario || !/^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(destinatario)) {
-        throw fallo('EMAIL_DESTINATARIO_INVALIDO', 'Configura EMAIL_USER con un único destinatario autorizado.');
+        throw fallo('EMAIL_DESTINATARIO_INVALIDO', 'Configura un único destinatario autorizado para el tipo de correo.');
     }
     return destinatario;
 }
@@ -102,7 +104,7 @@ function contenidoCorreo(mensaje) {
     };
 }
 
-function crearCorreoSMTP(env) {
+function crearCorreoSMTP(env, proposito) {
     let transporter;
     function obtenerTransporte() {
         if (!env.EMAIL_USER?.trim() || !env.EMAIL_PASS?.trim()) throw fallo('SMTP_NO_CONFIGURADO', 'El correo no está configurado en el servidor.');
@@ -114,7 +116,7 @@ function crearCorreoSMTP(env) {
         async sendMail(mensaje) {
             // Destinatario fijo: ninguna entrada HTTP puede cambiarlo.
             const transporte = obtenerTransporte();
-            const destinatario = destinatarioAutorizado(env);
+            const destinatario = destinatarioAutorizado(env, proposito);
             const info = await transporte.sendMail({ ...contenidoCorreo(mensaje), from: env.EMAIL_USER, to: destinatario });
             if (!info.accepted?.length || info.rejected?.length) throw fallo('CORREO_NO_ACEPTADO', 'El servidor SMTP no aceptó el correo.', 502);
             return { ...info, proveedor: 'smtp', estado: 'aceptado', entrega: 'no_confirmada' };
@@ -122,17 +124,17 @@ function crearCorreoSMTP(env) {
     };
 }
 
-function crearCorreoResend(env) {
+function crearCorreoResend(env, proposito) {
     let cliente;
     return {
         async verify() {
             throw fallo('EMAIL_VERIFY_NO_DISPONIBLE', 'Resend no usa autenticación SMTP. La prueba real de envío requiere autorización.');
         },
-        async sendMail(mensaje) {
+        async sendMail(mensaje, opciones = {}) {
             if (!env.RESEND_API_KEY?.trim() || !env.EMAIL_FROM?.trim() || process.env.RESEND_DEBUG === 'true') {
                 throw fallo('RESEND_NO_CONFIGURADO', 'Configura RESEND_API_KEY y EMAIL_FROM y mantén RESEND_DEBUG desactivado.');
             }
-            const destinatario = destinatarioAutorizado(env);
+            const destinatario = destinatarioAutorizado(env, proposito);
             const timeout = Number(env.RESEND_TIMEOUT_MS || 15000);
             if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) {
                 throw fallo('RESEND_NO_CONFIGURADO', 'RESEND_TIMEOUT_MS debe estar entre 1 y 60000 milisegundos.');
@@ -145,7 +147,9 @@ function crearCorreoResend(env) {
                 try {
                     resultado = await cliente.emails.send({ ...contenidoCorreo(mensaje),
                         from: env.EMAIL_FROM.trim(), to: [destinatario],
-                    }, { signal: controller.signal });
+                    }, { signal: controller.signal,
+                        ...(opciones.idempotencyKey ? { idempotencyKey: opciones.idempotencyKey } : {}),
+                    });
                 } catch {
                     throw fallo(controller.signal.aborted ? 'RESEND_TIMEOUT' : 'RESEND_ERROR', 'No se pudo confirmar la aceptación del correo por Resend.', controller.signal.aborted ? 504 : 502);
                 }
@@ -168,10 +172,15 @@ function crearCorreoResend(env) {
     };
 }
 
-function crearCorreo(env = process.env) {
-    const proveedor = (env.EMAIL_PROVIDER || 'smtp').trim().toLowerCase();
-    if (proveedor === 'smtp') return crearCorreoSMTP(env);
-    if (proveedor === 'resend') return crearCorreoResend(env);
+function crearCorreo(env = process.env, proposito = 'reporte') {
+    if (!['reporte', 'alerta'].includes(proposito)) {
+        const invalido = async () => { throw fallo('EMAIL_PROPOSITO_INVALIDO', 'Tipo de correo no permitido.'); };
+        return { verify: invalido, sendMail: invalido };
+    }
+    // Las alertas nuevas siempre usan Resend; SMTP se conserva para reportes/local.
+    const proveedor = proposito === 'alerta' ? 'resend' : (env.EMAIL_PROVIDER || 'smtp').trim().toLowerCase();
+    if (proveedor === 'smtp') return crearCorreoSMTP(env, proposito);
+    if (proveedor === 'resend') return crearCorreoResend(env, proposito);
     const invalido = async () => { throw fallo('EMAIL_PROVIDER_INVALIDO', 'EMAIL_PROVIDER debe ser smtp o resend.'); };
     return { verify: invalido, sendMail: invalido };
 }
@@ -180,7 +189,7 @@ function errorCorreo(error) {
     const errores = {
         SMTP_NO_CONFIGURADO: [503, 'El correo SMTP no está configurado en el servidor.'],
         EMAIL_PROVIDER_INVALIDO: [503, 'EMAIL_PROVIDER debe ser smtp o resend.'],
-        EMAIL_DESTINATARIO_INVALIDO: [503, 'Configura EMAIL_USER con un único destinatario autorizado.'],
+        EMAIL_DESTINATARIO_INVALIDO: [503, 'Revisa el destinatario autorizado configurado en el servidor.'],
         RESEND_NO_CONFIGURADO: [503, 'Revisa la configuración de Resend en el servidor.'],
         RESEND_RECHAZADO: [502, 'Resend rechazó el correo. Revisa clave, remitente y destinatario autorizado en el servidor.'],
         RESEND_CUOTA: [503, 'Resend alcanzó su cuota o límite de solicitudes.'],
