@@ -11,7 +11,7 @@ const { crearCorreo, registrarError } = require('../integraciones');
 const { crearCorreoPreparacion } = require('../local-validacion');
 
 const env = { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'clave-ficticia-solo-pruebas',
-    EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'cuenta@example.invalid' };
+    EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'cuenta@example.invalid', ALERT_EMAIL_TO: 'cuenta@example.invalid' };
 const mensaje = { subject: 'Reporte de prueba', html: '<table><tr><td>27°C</td><td>65%</td></tr></table>' };
 
 function apiSimulada(t, responder) {

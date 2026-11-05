@@ -68,7 +68,7 @@ async function main() {
     if (flags.has('--send-test')) {
         try {
             await crearCorreo().sendMail({ subject: 'AgroValle: prueba controlada de correo', text: 'Unico mensaje de prueba del diagnostico AgroValle. No se escribieron datos en Supabase.' });
-            console.log('Correo: un mensaje aceptado para EMAIL_USER por el proveedor configurado; entrega no confirmada.');
+            console.log('Correo: un mensaje aceptado para el destinatario de reportes configurado; entrega no confirmada.');
         } catch (error) { registrarError(console, 'Diagnostico de correo', error); process.exitCode = 1; }
     }
 }
