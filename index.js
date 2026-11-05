@@ -3,7 +3,7 @@ const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
 const jwt = require("jsonwebtoken");
 const path = require("path");
-const { temperaturaAlta, construirAlerta, modoAlertas, autenticarWebhook, claveAlerta } = require('./alertas');
+const { temperaturaAlta, construirAlerta, modoAlertas, autenticarWebhook, evaluarEventoAlerta } = require('./alertas');
 const { cargarContexto, crearGenerador, errorChat, crearCorreo, registrarError, errorCorreo } = require('./integraciones');
 require("dotenv").config({ path: path.join(__dirname, '.env'), quiet: true });
 
@@ -77,18 +77,18 @@ function crearApp(opciones = {}) {
         res.json({ ok: true, mensaje: "Datos guardados" });
     });
 
-    // Receptor de INSERT directo de Supabase. Nunca inserta ni actualiza telemetria.
+    // Receptor de INSERT/UPDATE de Supabase. Nunca inserta ni actualiza telemetria.
     app.post('/api/webhooks/supabase/telemetria', async (req, res) => {
         const acceso = autenticarWebhook(req, env);
         if (acceso) return res.status(acceso.status).json({ ok: false, codigo: acceso.codigo });
         try {
             if (modoAlertas(env) !== 'webhook') return res.status(409).json({ ok: false, codigo: 'WEBHOOK_DESACTIVADO' });
             const evento = req.body;
-            if (evento?.type !== 'INSERT' || evento.schema !== 'public' || evento.table !== 'telemetria') {
+            if (!['INSERT', 'UPDATE'].includes(evento?.type) || evento.schema !== 'public' || evento.table !== 'telemetria') {
                 return res.json({ ok: true, alerta: 'omitida', motivo: 'EVENTO_NO_APLICABLE' });
             }
-            const idempotencyKey = claveAlerta(evento.record, env);
-            if (!temperaturaAlta(evento.record)) return res.json({ ok: true, alerta: 'omitida', motivo: 'TEMPERATURA_NO_SUPERA_30' });
+            const { idempotencyKey, motivo } = evaluarEventoAlerta(evento, env);
+            if (motivo) return res.json({ ok: true, alerta: 'omitida', motivo });
             const resultado = await correoAlertas.sendMail({ ...construirAlerta(evento.record), to: env.ALERT_EMAIL_TO }, { idempotencyKey });
             logger.info(resultado?.preparado ? 'Alerta webhook preparada; no se envió correo' : 'Alerta webhook aceptada por Resend; entrega aún no confirmada');
             return res.json({ ok: true, alerta: resultado?.preparado ? 'preparada' : 'aceptada',
@@ -97,7 +97,9 @@ function crearApp(opciones = {}) {
             });
         } catch (error) {
             registrarError(logger, 'Alerta webhook: fallo', error);
-            if (error.codigo === 'WEBHOOK_REGISTRO_INVALIDO') return res.status(400).json({ ok: false, codigo: error.codigo });
+            if (['WEBHOOK_REGISTRO_INVALIDO', 'WEBHOOK_ANTERIOR_INVALIDO', 'WEBHOOK_VERSION_REQUERIDA'].includes(error.codigo)) {
+                return res.status(400).json({ ok: false, codigo: error.codigo });
+            }
             if (error.codigo === 'ALERT_TRIGGER_INVALIDO') return res.status(503).json({ ok: false, codigo: error.codigo });
             const resultado = errorCorreo(error);
             return res.status(resultado.status).json({ ok: false, codigo: resultado.codigo, error: resultado.error });

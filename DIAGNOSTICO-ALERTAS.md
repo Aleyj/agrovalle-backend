@@ -1,10 +1,126 @@
-# Alertas de temperatura: origen y corrección local propuesta
+# Alertas de temperatura: diagnóstico y preparación de publicación
 
-4 de noviembre de 2026. Cambios locales sin commit, push ni despliegue. No se enviaron
-correos reales, no se consultó ni modificó Supabase en esta fase. Las consultas SQL
-incluidas más abajo son una propuesta de inspección, no fueron ejecutadas.
+Actualizado el 4 de noviembre de 2026 (America/Lima; evidencias UTC del 5 de noviembre).
+La corrección ya está en GitHub en la rama de trabajo; todavía no está en `main`.
+Durante esta revisión no se hicieron commits, push, despliegues, envíos de correo ni
+consultas a Supabase. Las consultas SQL incluidas son propuestas, no se ejecutaron.
 
-## Diagnóstico primero: qué está confirmado
+## Nueva evidencia y alcance de la investigación
+
+**Avance posterior:** el usuario confirmó recepción de la alerta al insertar una
+fila alta de un ESP. Luego habilitó UPDATE en el webhook. Se preparó soporte local
+para cruces <=30→>30 con estado anterior y versión temporal única. Se mantienen
+INSERT, reportes y la exclusividad de fuentes. Véase `NOTIFICACIONES.md`: no basta
+con marcar UPDATE si Render aún ejecuta la versión que solo admite INSERT. No se
+ejecutaron envíos ni ediciones reales en esta ampliación.
+
+Validación de la ampliación UPDATE: **40 pruebas aprobadas, 0 fallidas**, incluidos
+cuatro casos nuevos sobre cruces, reintentos, versiones y estados anteriores.
+Evidencia: `evidencia/pruebas-alertas-update.tap`, ignorada por Git. La revisión de
+archivos versionables no detectó coincidencias sensibles con los controles existentes.
+
+- El usuario observó un correo con remitente Gmail de su compañero y asunto
+  «Alerta: Temperatura crítica…», ausente de Resend. No se publica aquí su dirección.
+  El campo From y un asunto parecido no identifican por sí solos el proceso emisor.
+- El usuario ejecutó una consulta de triggers de usuario en `public.telemetria` y
+  obtuvo cero registros. Si corresponde al mismo proyecto, tabla y momento del
+  INSERT, esto contradice la hipótesis de un trigger de esa tabla o un Database
+  Webhook instalado allí: estos webhooks se implementan mediante triggers.
+  No descarta un proceso que consulte filas periódicamente, Realtime, Cron que
+  invoque otro servicio o una automatización externa. No se verificó el catálogo
+  directamente y no se afirma que exista ninguna de esas alternativas.
+- Se consultaron las ramas vivas de GitHub con `git ls-remote --heads origin` y se
+  actualizaron referencias mediante `git fetch origin`, sin cambiar de rama. Se
+  revisaron los 7 commits alcanzables del backend y los 4 del frontend: 38 y 18
+  blobs únicos de texto respectivamente, excluyendo binarios y lockfiles. La búsqueda
+  cubrió remitente literal, asunto, SMTP/proveedores y señales de automatización.
+  No hay coincidencias del remitente antiguo en esos archivos. No se revisaron
+  repositorios ajenos, ramas eliminadas ni configuración privada de otros equipos.
+- Los asuntos de temperatura crítica aparecen en `index.js` histórico y en
+  `alertas.js` actual y sus tests. La semejanza no prueba quién envió el correo.
+  Los commits `a39c21a` y `bf6ae0f` contienen Gmail SMTP; reportes y alertas toman
+  el correo de variables privadas. Su alerta requiere una llamada a Express.
+  Desde `337fb2d`, reportes y alertas compartían proveedor configurable hasta la
+  separación actual. No se encontró otro emisor automático en el código revisado.
+- No hay archivos de workflows, servicios programados, funciones Supabase ni cron
+  en los árboles revisados. Los scripts locales de diagnóstico/envío son explícitos;
+  no monitorean tablas. React solo consulta `/api/historial` cada cinco segundos,
+  sin insertar filas ni enviar correo. Esto no permite descartar servicios externos.
+- Se comprobó privadamente que `EMAIL_USER` y `EMAIL_FROM` locales no coinciden con
+  el remitente antiguo. Las cuatro variables nuevas de alertas/destinatarios siguen
+  sin definir en `.env`; no se alteró ese archivo ni se infiere la configuración remota.
+
+**Conclusión:** no hay causa confirmada para el correo antiguo. Para identificarla,
+correlacionar privadamente fecha, Message-ID y autenticación SPF/DKIM del mensaje
+ya recibido con logs de servicios existentes. Revisar tareas del equipo emisor,
+servicios anteriores, Cron, Edge Functions e integraciones externas con acceso del
+propietario. No ejecutar envíos ni reenviar lecturas para investigar. Publicar esta
+corrección no detendrá un emisor independiente y podría dejar dos sistemas activos.
+
+## Publicación comprobada y respuesta de Render
+
+**Última comprobación:** después de que el usuario indicó haber completado el
+despliegue, el 2026-11-05 a las 02:07:53 UTC el POST vacío sin autenticación respondió
+**401 `WEBHOOK_NO_AUTORIZADO`**. El receptor ya está disponible y rechaza peticiones
+sin Bearer. En el código revisado esta respuesta implica un secreto configurado de
+al menos 32 caracteres; no acredita que coincida con Supabase ni confirma el SHA
+exacto, el modo de alertas, los destinatarios o la conectividad Resend. Los 404
+descritos a continuación son observaciones anteriores. No se hicieron INSERT,
+llamadas autenticadas al webhook ni envíos. La validación extremo a extremo sigue
+pendiente y requiere autorización específica.
+
+Actualización posterior: el usuario informó que ya creó el Database Webhook en
+Supabase. No se inspeccionaron sus parámetros ni se ejecutó desde esta tarea. El
+2026-11-05 a las 02:05:49 UTC se repitió la petición vacía y sin autenticación al
+receptor público: sigue respondiendo **404, Cannot POST**. Por tanto, crear el
+webhook no completó la activación: primero debe estar disponible el receptor en
+Render. No se hicieron INSERT ni envíos de prueba. No generar lecturas de prueba
+para validar esta configuración hasta resolver el despliegue y autorizar la prueba.
+
+| Repositorio | Rama GitHub | Commit comprobado |
+| --- | --- | --- |
+| Backend | `feat/resend-agrobot-release` | `9265dce` — Alertas a nuevo correo |
+| Backend | `main` | `9a8f938` — merge de la integración anterior de Resend/AgroBot |
+| Frontend | `feat/local-api-release` | `a2ef710` |
+| Frontend | `main` | `0941c9d` — merge del frontend anterior |
+
+`9265dce` y `498498e` no son ancestros de `origin/main` del backend. Allí faltan
+`alertas.js` y el receptor nuevo; la rama de trabajo sí los contiene. Las ramas
+locales `main` siguen en sus bases antiguas; usar `origin/main` para comparar.
+
+El 2026-11-05 a las 01:51:41 UTC (4 de noviembre, Lima) se hizo una sola petición
+`POST https://agrovalle-backend-api.onrender.com/api/webhooks/supabase/telemetria`
+sin Authorization y con cuerpo `{}`. Respondió **404, Cannot POST**. No se invocaron
+`/api/telemetria` ni `/api/reporte`. El receptor revisado habría rechazado esa
+petición con 401 o 503 antes de procesar eventos; no podía enviar ni escribir datos.
+La ruta nueva no está disponible en la URL pública consultada. Esto es consistente
+con una versión anterior, pero no identifica el SHA desplegado ni la rama del panel.
+El usuario indicó después que Render utiliza `feat/resend-agrobot-release`
+(normalización de su respuesta «feat/resend agrobot release» a la rama existente).
+Posteriormente proporcionó el commit del deploy: **`9a8f938`**. Ambos datos proceden
+del usuario, no de una inspección directa del panel. El árbol Git de `9a8f938`
+corresponde al merge de la integración anterior; no contiene `alertas.js` ni el
+nuevo receptor. Esto explica el 404 observado: la corrección `9265dce` todavía no
+está en el código desplegado indicado. El SHA pertenece al merge de `main`; no
+permite reconstruir por sí solo la rama configurada actualmente ni cómo se eligió
+ese deploy. No hay acceso administrativo conectado. Esta diferencia de versiones
+no identifica el origen del correo antiguo ni demuestra que Render lo envíe.
+
+## Verificación repetida en esta revisión
+
+- Backend: **36 pruebas aprobadas, 0 fallidas**, incluidas 29/30/35 °C,
+  autenticación, destinatarios separados, duplicados y regresión de reportes.
+- Frontend: `npm run build` y `npm run lint` correctos. No se repitió navegación
+  real contra producción ni envíos; los endpoints se verificaron con dobles locales.
+- `node revisar-git.js`: cero coincidencias con secretos/direcciones privadas locales
+  y patrones comprobados en archivos versionables de ambos repositorios. `.env` y
+  `.env.local` ignorados; nada staged. No es una auditoría exhaustiva de secretos históricos.
+- Evidencia privada ignorada: `evidencia/origen-alertas.json`,
+  `evidencia/pruebas-alertas-webhook.tap`, `evidencia/revision-git.json`.
+- No se detectó un defecto que requiera cambiar código de las integraciones.
+  Esta revisión actualiza documentación. La configuración y activación siguen pendientes.
+
+## Revisión del flujo y antecedentes
 
 1. **Origen de lecturas indicado por el usuario:** se insertan directamente en Supabase.
    También indicó que Resend registraba el reporte, no la alerta anterior. Esto es
@@ -73,7 +189,8 @@ Requiere `Authorization: Bearer <SUPABASE_WEBHOOK_SECRET>`, secreto dedicado de 
 32 caracteres, comparado sin registrar su valor. No reutilizar `SUPABASE_KEY`,
 `RESEND_API_KEY` ni el token de login del frontend para autenticar este webhook.
 La ausencia de configuración devuelve 503; un token incorrecto/ausente, 401.
-Solo procesa `INSERT` de `public.telemetria` con ID de lectura válido. Otros eventos
+La versión publicada inicial solo procesaba `INSERT`. El cambio local nuevo admite
+también `UPDATE` con el contrato descrito en `NOTIFICACIONES.md`. Otros eventos
 autenticados se omiten sin enviar. No inserta ni actualiza registros.
 
 Para cada lectura alta, el SDK recibe una `idempotencyKey` estable que incorpora un
@@ -110,13 +227,14 @@ También se prueba:
 - Evento webhook repetido: dos solicitudes con la misma clave y un único mensaje
   aceptado por el proveedor simulado. Esto verifica el contrato; no es una prueba
   real de idempotencia en la cuenta Resend.
-- Rechazo de autenticación, secreto no configurado, ID inválido, otra tabla y UPDATE.
+- Rechazo de autenticación, secreto no configurado, ID inválido, otra tabla y DELETE.
 - Fallo del proveedor, reentrega con clave estable y logs sin mensajes privados.
 - HTML seguro, campos opcionales y conservación del INSERT y su respuesta original.
 
 Comando reproducible: `node --test`. Evidencia local ignorada por Git:
 `evidencia/pruebas-alertas-webhook.tap`.
-Resultado final: **36 pruebas aprobadas, 0 fallidas** (29 de regresión y 7 nuevas).
+Resultado de la versión INSERT: **36 pruebas aprobadas, 0 fallidas** (29 de regresión
+y 7 nuevas). La ampliación UPDATE eleva el resultado a **40 aprobadas, 0 fallidas**.
 
 ## Inspección pendiente del mecanismo anterior, solo lectura
 

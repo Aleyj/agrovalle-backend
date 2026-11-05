@@ -2,6 +2,68 @@
 
 Fecha: 4 de noviembre de 2026 (America/Lima).
 
+## Revisión actual: alertas y publicación comprobada
+
+**Nuevo cambio local para UPDATE:** el usuario confirmó que recibió la alerta de
+una fila nueva con temperatura alta y después habilitó UPDATE en el webhook de
+Supabase. Esa confirmación procede del usuario, no de una prueba real adicional
+del agente. Se adaptó localmente el receptor para alertar solo al pasar de <=30 a
+>30, usando `old_record`. Para un nuevo cruce de la misma fila requiere versión
+temporal nueva (`updated_at` o `fecha_hora` posterior), conservada en los reintentos;
+sin ella rechaza el cruce sin enviar. INSERT y reportes conservan su comportamiento.
+No se modificaron tabla, entorno privado ni producción. Ver `NOTIFICACIONES.md`
+para el contrato y los límites. Este soporte no está desplegado todavía.
+La suite final de esta ampliación aprobó **40 pruebas, 0 fallidas**; auditoría de
+archivos versionables sin coincidencias sensibles detectadas. Evidencia ignorada:
+`evidencia/pruebas-alertas-update.tap`. No se hicieron commits ni push.
+
+**Estado más reciente:** tras el despliegue indicado por el usuario, la comprobación
+sin autenticación del receptor a las 02:07:53 UTC respondió **401
+`WEBHOOK_NO_AUTORIZADO`**. La ruta ya está disponible y exige autenticación. Esto
+sustituye el 404 anterior; no confirma coincidencia del secreto con Supabase, modo
+webhook, destinatario ni entrega Resend. No se insertaron lecturas ni enviaron
+correos. Falta una prueba extremo a extremo expresamente autorizada.
+
+Actualización posterior: el usuario indicó que creó el webhook de Supabase. La
+comprobación del receptor público a las 02:05:49 UTC del 5 de noviembre (4 de
+noviembre en Lima), con POST vacío y sin autenticación, volvió a responder 404.
+El receptor aún no está disponible; sigue pendiente el despliegue de la corrección.
+No se verificó el contenido del webhook ni se insertaron lecturas o enviaron correos.
+
+Se revisaron todas las ramas disponibles tras consultar y descargar referencias de
+GitHub: backend `main=9a8f938`, rama de trabajo `9265dce`; frontend `main=0941c9d`,
+rama de trabajo `a2ef710`. La corrección de alertas está publicada en la rama de
+trabajo del backend, pero todavía no está incluida en `main`. No se hicieron commits
+ni push en esta revisión. Las referencias locales `main` no se movieron.
+
+Render devolvió 404 `Cannot POST` al nuevo receptor con un cuerpo vacío y sin
+autenticación. La ruta nueva no está disponible en la URL pública comprobada; el
+usuario indicó que la rama de Render es `feat/resend-agrobot-release` y después
+proporcionó el commit del deploy: **`9a8f938`**. Su árbol Git no incluye `alertas.js`
+ni el nuevo receptor, lo que explica el 404. La corrección `9265dce` no está en ese
+deploy. La rama y el SHA son información del usuario, sin inspección directa del
+panel; el SHA identifica el merge anterior de `main`. Esto no identifica el emisor
+del correo antiguo. No se invocaron endpoints de
+envío ni escritura. No se consultó ni modificó Supabase.
+
+El usuario informa cero triggers de usuario en `public.telemetria`, remitente Gmail
+del compañero y ausencia de la alerta en Resend. No se encontró ese remitente en
+los archivos históricos revisados, ni otro monitor automático en los repositorios.
+El Gmail SMTP histórico solo alerta al pasar por Express. El origen del correo
+anterior sigue sin identificar; no se atribuye a Render. La ausencia de triggers
+de esa tabla no descarta consumidores o tareas externas.
+
+Pruebas repetidas: **36/36 backend**, compilación y lint frontend correctos. La
+separación de destinatarios, umbrales, Bearer, fuente exclusiva e idempotencia se
+verificaron con simulaciones. Auditoría de archivos versionables: cero coincidencias
+sensibles detectadas; `.env` ignorado. No se alteraron código, credenciales ni paneles.
+
+Conclusiones, límites, archivos del commit y siguientes pasos en
+[DIAGNOSTICO-ALERTAS.md](DIAGNOSTICO-ALERTAS.md) y
+[PROPUESTA-COMMITS-Y-DESPLIEGUE.md](PROPUESTA-COMMITS-Y-DESPLIEGUE.md).
+Las secciones siguientes conservan antecedentes de sesiones anteriores; sus frases
+sobre cambios «sin commit» o «no publicados» describen aquel momento.
+
 ## Alertas automáticas: origen directo en Supabase y propuesta local
 
 El usuario confirmó que las lecturas llegan directamente a Supabase y que Resend

@@ -18,7 +18,8 @@ function registrarError(logger, servicio, error) {
         'GEMINI_RESPUESTA_VACIA', 'EMAIL_PROVIDER_INVALIDO', 'EMAIL_DESTINATARIO_INVALIDO',
         'RESEND_NO_CONFIGURADO', 'RESEND_TIMEOUT', 'RESEND_RECHAZADO', 'RESEND_CUOTA',
         'RESEND_NO_DISPONIBLE', 'RESEND_ERROR', 'RESEND_RESPUESTA_INVALIDA', 'EMAIL_VERIFY_NO_DISPONIBLE',
-        'ALERT_TRIGGER_INVALIDO', 'WEBHOOK_NO_CONFIGURADO', 'WEBHOOK_REGISTRO_INVALIDO', 'EMAIL_PROPOSITO_INVALIDO'];
+        'ALERT_TRIGGER_INVALIDO', 'WEBHOOK_NO_CONFIGURADO', 'WEBHOOK_REGISTRO_INVALIDO',
+        'WEBHOOK_ANTERIOR_INVALIDO', 'WEBHOOK_VERSION_REQUERIDA', 'EMAIL_PROPOSITO_INVALIDO'];
     logger.error(servicio, {
         codigo: permitidos.includes(error.codigo || error.code) ? (error.codigo || error.code) : 'ERROR_PROVEEDOR',
         status: Number.isInteger(error.status) ? error.status : undefined,

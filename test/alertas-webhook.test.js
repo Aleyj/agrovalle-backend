@@ -13,6 +13,8 @@ const env = { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable'
     ALERT_TRIGGER: 'webhook', SUPABASE_WEBHOOK_SECRET: 'secreto-ficticio-para-tests-1234567890' };
 const registro = temperatura => ({ id: 123, dispositivo_id: 'prueba', temperatura, humedad: 70, fecha_hora: '2026-11-04T12:00:00Z' });
 const evento = temperatura => ({ type: 'INSERT', schema: 'public', table: 'telemetria', record: registro(temperatura), old_record: null });
+const actualizacion = (antes, despues, minuto = 1) => ({ ...evento(despues), type:'UPDATE',
+    old_record: registro(antes), record: { ...registro(despues), fecha_hora:`2026-11-04T12:${String(minuto).padStart(2, '0')}:00Z` } });
 
 async function preparar(t, opciones = {}) {
     const config = { ...env, ...opciones.env };
@@ -107,11 +109,11 @@ test('Express + webhook + repeticion: una fuente, clave estable y una aceptacion
     assert.equal(s.mensajesUnicos.size, 1);
 });
 
-test('Webhook: secreto ausente/incorrecto, otra tabla, UPDATE e ID invalido no envian correo', async t => {
+test('Webhook: secreto ausente/incorrecto, otra tabla, DELETE e ID invalido no envian correo', async t => {
     const s = await preparar(t);
     assert.equal((await s.post('/api/webhooks/supabase/telemetria', evento(35), '')).status, 401);
     assert.equal((await s.post('/api/webhooks/supabase/telemetria', evento(35), 'incorrecto')).status, 401);
-    for (const body of [{ ...evento(35), type:'UPDATE' }, { ...evento(35), table:'otra' }, { ...evento(35), schema:'otro' }]) {
+    for (const body of [{ ...evento(35), type:'DELETE' }, { ...evento(35), table:'otra' }, { ...evento(35), schema:'otro' }]) {
         assert.equal((await s.post('/api/webhooks/supabase/telemetria', body)).body.alerta, 'omitida');
     }
     assert.equal((await s.post('/api/webhooks/supabase/telemetria', { ...evento(35), record:{ temperatura:35 } })).status, 400);
@@ -119,6 +121,63 @@ test('Webhook: secreto ausente/incorrecto, otra tabla, UPDATE e ID invalido no e
     assert.equal((await sinSecret.post('/api/webhooks/supabase/telemetria', evento(35))).status, 503);
     assert.equal(s.peticiones.length, 0);
     assert.equal(sinSecret.peticiones.length, 0);
+});
+
+test('UPDATE: solo el cruce desde 30 o menos a mas de 30 genera alerta', async t => {
+    const s = await preparar(t);
+    for (const [antes, despues, envia] of [[28,35,true], [30,35,true], [35,36,false], [35,29,false], [29,30,false], [29,29,false]]) {
+        const r = await s.post('/api/webhooks/supabase/telemetria', actualizacion(antes, despues, s.peticiones.length + 1));
+        assert.equal(r.status, 200);
+        assert.equal(r.body.alerta, envia ? 'aceptada' : 'omitida');
+    }
+    assert.equal(s.peticiones.length, 2);
+    assert.equal(s.inserts.length, 0);
+    assert.deepEqual(s.peticiones[0].payload.to, [env.ALERT_EMAIL_TO]);
+});
+
+test('UPDATE: reintento conserva clave, nuevo cruce de misma fila obtiene otra, INSERT conserva identidad', async t => {
+    const s = await preparar(t);
+    const insert = await s.post('/api/webhooks/supabase/telemetria', evento(35));
+    const primero = actualizacion(29,35,1);
+    const a = await s.post('/api/webhooks/supabase/telemetria', primero);
+    const repetido = await s.post('/api/webhooks/supabase/telemetria', primero);
+    await s.post('/api/webhooks/supabase/telemetria', actualizacion(35,29,2));
+    const segundo = { ...actualizacion(29,35,3), old_record:actualizacion(35,29,2).record };
+    const b = await s.post('/api/webhooks/supabase/telemetria', segundo);
+    assert.equal(a.body.messageId, repetido.body.messageId);
+    assert.notEqual(a.body.messageId, b.body.messageId);
+    assert.notEqual(insert.body.messageId, a.body.messageId);
+    assert.equal(s.peticiones[1].key, s.peticiones[2].key);
+    assert.notEqual(s.peticiones[1].key, s.peticiones[3].key);
+    assert.equal(s.mensajesUnicos.size, 3);
+    assert.equal(s.inserts.length, 0);
+});
+
+test('UPDATE: estado anterior incompleto, ID distinto o fecha sin avanzar se rechazan sin enviar', async t => {
+    const s = await preparar(t);
+    for (const old_record of [null, { id:123 }, { ...registro(29), id:456 }, { ...registro(29), temperatura:null }, { ...registro(29), temperatura:'' }]) {
+        const r = await s.post('/api/webhooks/supabase/telemetria', { ...actualizacion(29,35), old_record });
+        assert.equal(r.status, 400);
+        assert.equal(r.body.codigo, 'WEBHOOK_ANTERIOR_INVALIDO');
+    }
+    for (const fecha_hora of [registro(29).fecha_hora, undefined, 'invalida', '2026-11-03T12:00:00Z']) {
+        const r = await s.post('/api/webhooks/supabase/telemetria', { ...actualizacion(29,35), record:{ ...registro(35), fecha_hora } });
+        assert.equal(r.status, 400);
+        assert.equal(r.body.codigo, 'WEBHOOK_VERSION_REQUERIDA');
+    }
+    assert.equal(s.peticiones.length, 0);
+    assert.equal(s.inserts.length, 0);
+});
+
+test('UPDATE: updated_at permite nueva version sin cambiar fecha de la lectura; errores permiten reintento estable', async t => {
+    const s = await preparar(t, { errorAPI:true });
+    const e = { ...actualizacion(29,35),
+        old_record: { ...registro(29), updated_at:'2026-11-04T12:00:00Z' },
+        record: { ...registro('35'), updated_at:'2026-11-04T12:01:00Z' } };
+    for (let i = 0; i < 2; i++) assert.equal((await s.post('/api/webhooks/supabase/telemetria', e)).status, 503);
+    assert.equal(s.peticiones.length, 2);
+    assert.equal(s.peticiones[0].key, s.peticiones[1].key);
+    assert.ok(!JSON.stringify(s.logs).includes('DETALLE_PRIVADO'));
 });
 
 test('Destinatarios separados y sin fallback antiguo para alerta; reporte conserva compatibilidad', async t => {

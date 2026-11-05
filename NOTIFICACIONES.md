@@ -1,11 +1,43 @@
 # Notificaciones de AgroValle: Resend, SMTP y preparación local
 
-Corrección de alertas preparada localmente para revisión el 4 de noviembre de 2026.
-El usuario informa que el reporte ya funciona en Vercel/Render; esta nueva corrección
-de alertas no se desplegó. Ver `DIAGNOSTICO-ALERTAS.md` para el origen y el corte propuesto.
+Actualización del 4 de noviembre de 2026: el usuario confirmó que una alerta por
+INSERT directo de una lectura alta ya funcionó. Después habilitó UPDATE en su
+webhook. El soporte de UPDATE descrito aquí es un cambio local nuevo, sin desplegar.
+Ver `DIAGNOSTICO-ALERTAS.md` para los antecedentes.
 El usuario confirmó aceptación por Resend y recepción en Gmail de la primera prueba
 real. Esa confirmación no se presenta como una nueva prueba ejecutada por el agente.
 SDK oficial `resend` 6.37.0 fijado en `package.json` y `package-lock.json`.
+
+## Actualizaciones de filas existentes (cambio local pendiente)
+
+El receptor admite INSERT y UPDATE autenticados de `public.telemetria`. INSERT
+conserva su comportamiento y su clave publicada. UPDATE envía solo al cruzar de
+temperatura anterior <=30 a nueva >30; 35→36, 35→29 y 29→30 no envían. Requiere
+`old_record` con ID de la misma fila y temperatura anterior válida. No consulta
+Supabase ni modifica registros para reconstruir ese estado.
+
+Para distinguir un nuevo cruce del reintento de uno anterior, UPDATE requiere
+`updated_at`, si existe, o `fecha_hora`, con valores válidos en ambos estados y
+valor nuevo posterior al anterior. Cada actualización notificable debe tener una
+versión única. No se crean columnas ni triggers automáticamente. Si se usa Table
+Editor y no hay `updated_at` mantenido por el proyecto, actualizar `fecha_hora`
+junto con la temperatura al registrar una medición nueva en esa fila. Si esa fecha
+debe preservar la medición original, no cambiarla arbitrariamente: se necesitará
+acordar una columna de versión/fecha de actualización por separado.
+
+La clave incorpora el ID, tipo UPDATE y hash de esa versión; un reintento del mismo
+evento conserva la clave y un nuevo cruce con versión distinta usa otra. La ventana
+de deduplicación sigue siendo de 24 horas, no una garantía permanente. No se usa
+la hora de recepción como identidad del evento. Configurar UPDATE en Supabase no
+actualiza automáticamente el código desplegado en Render.
+
+Errores sin envío: 400 `WEBHOOK_ANTERIOR_INVALIDO` si falta el estado anterior de
+una actualización alta, o 400 `WEBHOOK_VERSION_REQUERIDA` si hay cruce pero no nueva
+versión válida. Los estados no altos o que ya estaban altos se omiten sin enviar.
+No repetir una edición real solo para investigar un error: revisar primero el evento.
+
+Contrato del payload: [Supabase Database Webhooks](https://supabase.com/docs/guides/database/webhooks).
+Límite de idempotencia: [Resend](https://resend.com/docs/dashboard/emails/idempotency-keys).
 
 ## Selección del transporte
 
@@ -136,8 +168,8 @@ node diagnostico.js
 ```
 
 Las pruebas usan el SDK instalado con `fetch` simulado y servidores HTTP locales.
-Última ejecución: **36 pruebas aprobadas, 0 fallidas**, incluidos 29 casos anteriores
-y 7 de alertas/webhook. Reporte conservado en `evidencia/pruebas-alertas-webhook.tap`.
+Última ejecución: **40 pruebas aprobadas, 0 fallidas**, incluidos 29 casos anteriores
+y 11 de alertas/webhook. Reporte conservado en `evidencia/pruebas-alertas-update.tap`.
 Supabase es un doble de prueba; ningún registro real se inserta o modifica.
 Se comprueban HTML, destinatario fijo, ausencia de CC/BCC, aceptación sin entrega,
 errores 401/403/422/429/500, timeout, red, respuesta sin ID, selección de proveedor,
@@ -148,9 +180,9 @@ No valida Resend. No existe una verificación SMTP equivalente para la API de Re
 en esta implementación. `--send-test` utiliza el proveedor seleccionado, constituye
 un envío real y **no se ejecutó** en esta sesión. Requiere autorización expresa nueva.
 
-Pendiente: autorizar publicación y configurar el entorno de Render. El primer envío
-real y su recepción ya fueron confirmados por el usuario; no se repitieron durante
-la preparación de commits. Una comprobación real desde Render necesitará autorización.
+El usuario ya confirmó el reporte y la alerta INSERT publicados. Pendiente: revisar
+y autorizar la publicación de este soporte nuevo de UPDATE y, por separado, su
+prueba real. No se repitieron envíos ni se modificó producción durante esta ampliación.
 La migración no publica cambios ni habilita transportes en producción por sí misma.
 
 Fuentes oficiales: [SDK Node](https://github.com/resend/resend-node),
