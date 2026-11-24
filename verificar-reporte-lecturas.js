@@ -9,15 +9,18 @@ async function main() {
     let registros = 0;
     const supabaseLectura = { from(tabla) {
         assert.equal(tabla, 'telemetria');
-        return { select: () => ({ order: () => ({ limit: async limite => {
+        return { select: () => ({ eq: (campo, dispositivo) => {
+            assert.equal(campo, 'dispositivo_id');
+            return { order: () => ({ limit: async limite => {
             const r = await fetch('https://agrovalle-backend-api.onrender.com/api/historial', { signal: AbortSignal.timeout(45000) });
             if (!r.ok) throw new Error('HISTORIAL_PUBLICADO_FALLO');
             const datos = await r.json();
             assert.ok(Array.isArray(datos));
-            const data = datos.sort((a, b) => b.id - a.id).slice(0, limite);
+            const data = datos.filter(f => f.dispositivo_id === dispositivo).sort((a, b) => b.id - a.id).slice(0, limite);
             registros = data.length;
             return { data, error: null };
-        } }) }) };
+        } }) };
+        } }) };
     } };
     const app = crearApp({ supabase: supabaseLectura, correo: crearCorreoPreparacion({
         nombreEvidencia: 'reporte-lecturas-render.json', fuente: 'GET historial publicado Render; adaptador de lectura de prueba, no Supabase directo',

@@ -6,20 +6,19 @@ const nodemailer = require('nodemailer');
 const { crearApp } = require('../index');
 const { crearCorreo } = require('../integraciones');
 const { construirAlerta } = require('../alertas');
+const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 
-const env = { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable',
+const env = { DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable',
     EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'smtp@example.invalid',
     REPORT_EMAIL_TO: 'reportes@example.invalid', ALERT_EMAIL_TO: 'alertas@example.invalid',
     ALERT_TRIGGER: 'webhook', SUPABASE_WEBHOOK_SECRET: 'secreto-ficticio-para-tests-1234567890' };
 const registro = temperatura => ({ id: 123, dispositivo_id: 'prueba', temperatura, humedad: 70, fecha_hora: '2026-11-04T12:00:00Z' });
 const evento = temperatura => ({ type: 'INSERT', schema: 'public', table: 'telemetria', record: registro(temperatura), old_record: null });
-const actualizacion = (antes, despues, minuto = 1) => ({ ...evento(despues), type:'UPDATE',
-    old_record: registro(antes), record: { ...registro(despues), fecha_hora:`2026-11-04T12:${String(minuto).padStart(2, '0')}:00Z` } });
 
 async function preparar(t, opciones = {}) {
     const config = { ...env, ...opciones.env };
     const originales = globalThis.fetch;
-    const peticiones = [], mensajesUnicos = new Map(), inserts = [], logs = [];
+    const peticiones = [], mensajesUnicos = new Map(), logs = [];
     t.mock.method(nodemailer, 'createTransport', () => { throw new Error('SMTP_NO_PERMITIDO'); });
     t.mock.method(globalThis, 'fetch', async (input, options) => {
         const url = new URL(String(input));
@@ -38,21 +37,14 @@ async function preparar(t, opciones = {}) {
         mensajesUnicos.set(key || id, { payload, id });
         return Response.json({ id });
     });
-    const supabase = { from(tabla) {
-        assert.equal(tabla, 'telemetria');
-        return {
-            insert: async datos => { inserts.push(...datos); return { error: null }; },
-            select: () => ({ order: () => ({ limit: async n => {
-                assert.equal(n, 10); return { data: [registro(29)], error: null };
-            } }) }),
-        };
-    } };
+    const db = crearSupabaseSimulado(opciones.filas || []);
+    const supabase = db.cliente, inserts = db.insertados;
     const server = crearApp({ env: config, supabase,
         logger: { info: (...args) => logs.push(args), error: (...args) => logs.push(args) },
     }).listen(0, '127.0.0.1');
     await once(server, 'listening');
     t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
-    return { peticiones, mensajesUnicos, inserts, logs, async post(ruta, body, token = config.SUPABASE_WEBHOOK_SECRET) {
+    return { peticiones, mensajesUnicos, inserts, logs, filas:db.filas, async post(ruta, body, token = config.SUPABASE_WEBHOOK_SECRET) {
         const r = await fetch(`http://127.0.0.1:${server.address().port}${ruta}`, { method: 'POST',
             headers: { 'Content-Type':'application/json', ...(token ? { Authorization:`Bearer ${token}` } : {}) },
             body: JSON.stringify(body),
@@ -79,15 +71,17 @@ test('Webhook simulado 29/30/35: solo 35 prepara una alerta al destinatario de a
     assert.match(payload.html, /2026-11-04T12:00:00\.000Z/);
 });
 
-test('Modo express 29/30/35: mantiene el INSERT original y genera una sola alerta Resend', async t => {
+test('Modo express 29/30/35: registra cambios y genera una sola alerta Resend', async t => {
     const s = await preparar(t, { env: { ALERT_TRIGGER:'express', EMAIL_PROVIDER:'smtp' } });
     for (const temperatura of [29, 30, 35]) {
         const r = await s.post('/api/telemetria', { ...registro(temperatura), to:'ajeno@example.invalid' });
-        assert.deepEqual(r, { status:200, body:{ ok:true, mensaje:'Datos guardados' } });
+        assert.equal(r.status, 200);
+        assert.equal(r.body.registrado, true);
+        assert.equal(r.body.mensaje, 'Datos guardados');
     }
     await tick();
     assert.equal(s.inserts.length, 3);
-    assert.deepEqual(Object.keys(s.inserts[0]).sort(), ['bomba_encendida','dispositivo_id','humedad','temperatura']);
+    assert.deepEqual(s.inserts.map(x => x.temperatura), [29,30,35]);
     assert.equal(s.peticiones.length, 1);
     assert.deepEqual(s.peticiones[0].payload.to, [env.ALERT_EMAIL_TO]);
     assert.equal((await s.post('/api/webhooks/supabase/telemetria', evento(35))).status, 409);
@@ -96,11 +90,12 @@ test('Modo express 29/30/35: mantiene el INSERT original y genera una sola alert
 
 test('Express + webhook + repeticion: una fuente, clave estable y una aceptacion unica del proveedor simulado', async t => {
     const s = await preparar(t);
-    await s.post('/api/telemetria', registro(35));
+    const insert = await s.post('/api/telemetria', registro(35));
     await tick();
     assert.equal(s.peticiones.length, 0);
-    const a = await s.post('/api/webhooks/supabase/telemetria', evento(35));
-    const b = await s.post('/api/webhooks/supabase/telemetria', evento(35));
+    const hook = { ...evento(35), record:insert.body.lectura };
+    const a = await s.post('/api/webhooks/supabase/telemetria', hook);
+    const b = await s.post('/api/webhooks/supabase/telemetria', hook);
     assert.equal(a.body.messageId, b.body.messageId);
     assert.equal(s.inserts.length, 1);
     assert.equal(s.peticiones.length, 2); // Dos peticiones, un unico mensaje por idempotencia del proveedor.
@@ -116,68 +111,48 @@ test('Webhook: secreto ausente/incorrecto, otra tabla, DELETE e ID invalido no e
     for (const body of [{ ...evento(35), type:'DELETE' }, { ...evento(35), table:'otra' }, { ...evento(35), schema:'otro' }]) {
         assert.equal((await s.post('/api/webhooks/supabase/telemetria', body)).body.alerta, 'omitida');
     }
-    assert.equal((await s.post('/api/webhooks/supabase/telemetria', { ...evento(35), record:{ temperatura:35 } })).status, 400);
+    assert.equal((await s.post('/api/webhooks/supabase/telemetria', { ...evento(35), record:{ dispositivo_id:'prueba', temperatura:35 } })).status, 400);
     const sinSecret = await preparar(t, { env: { SUPABASE_WEBHOOK_SECRET:'' } });
     assert.equal((await sinSecret.post('/api/webhooks/supabase/telemetria', evento(35))).status, 503);
     assert.equal(s.peticiones.length, 0);
     assert.equal(sinSecret.peticiones.length, 0);
 });
 
-test('UPDATE: solo el cruce desde 30 o menos a mas de 30 genera alerta', async t => {
+test('INSERT de cambios: humedad o temperatura ya alta no repiten alerta; un nuevo cruce si', async t => {
     const s = await preparar(t);
-    for (const [antes, despues, envia] of [[28,35,true], [30,35,true], [35,36,false], [35,29,false], [29,30,false], [29,29,false]]) {
-        const r = await s.post('/api/webhooks/supabase/telemetria', actualizacion(antes, despues, s.peticiones.length + 1));
+    const temperaturas = [22,30,35,35,36,29,34];
+    for (const [i, temperatura] of temperaturas.entries()) {
+        const record = { ...registro(temperatura), id:i+1, humedad:60+i };
+        s.filas.push(record); // El evento corresponde a una fila ya almacenada.
+        const r = await s.post('/api/webhooks/supabase/telemetria', { ...evento(temperatura), record });
         assert.equal(r.status, 200);
-        assert.equal(r.body.alerta, envia ? 'aceptada' : 'omitida');
+        assert.equal(r.body.alerta, [2,6].includes(i) ? 'aceptada' : 'omitida');
     }
     assert.equal(s.peticiones.length, 2);
-    assert.equal(s.inserts.length, 0);
-    assert.deepEqual(s.peticiones[0].payload.to, [env.ALERT_EMAIL_TO]);
-});
-
-test('UPDATE: reintento conserva clave, nuevo cruce de misma fila obtiene otra, INSERT conserva identidad', async t => {
-    const s = await preparar(t);
-    const insert = await s.post('/api/webhooks/supabase/telemetria', evento(35));
-    const primero = actualizacion(29,35,1);
-    const a = await s.post('/api/webhooks/supabase/telemetria', primero);
-    const repetido = await s.post('/api/webhooks/supabase/telemetria', primero);
-    await s.post('/api/webhooks/supabase/telemetria', actualizacion(35,29,2));
-    const segundo = { ...actualizacion(29,35,3), old_record:actualizacion(35,29,2).record };
-    const b = await s.post('/api/webhooks/supabase/telemetria', segundo);
-    assert.equal(a.body.messageId, repetido.body.messageId);
-    assert.notEqual(a.body.messageId, b.body.messageId);
-    assert.notEqual(insert.body.messageId, a.body.messageId);
-    assert.equal(s.peticiones[1].key, s.peticiones[2].key);
-    assert.notEqual(s.peticiones[1].key, s.peticiones[3].key);
-    assert.equal(s.mensajesUnicos.size, 3);
+    assert.notEqual(s.peticiones[0].key, s.peticiones[1].key);
     assert.equal(s.inserts.length, 0);
 });
 
-test('UPDATE: estado anterior incompleto, ID distinto o fecha sin avanzar se rechazan sin enviar', async t => {
+test('UPDATE de log antiguo y eventos de otro ESP no envian alertas', async t => {
     const s = await preparar(t);
-    for (const old_record of [null, { id:123 }, { ...registro(29), id:456 }, { ...registro(29), temperatura:null }, { ...registro(29), temperatura:'' }]) {
-        const r = await s.post('/api/webhooks/supabase/telemetria', { ...actualizacion(29,35), old_record });
-        assert.equal(r.status, 400);
-        assert.equal(r.body.codigo, 'WEBHOOK_ANTERIOR_INVALIDO');
-    }
-    for (const fecha_hora of [registro(29).fecha_hora, undefined, 'invalida', '2026-11-03T12:00:00Z']) {
-        const r = await s.post('/api/webhooks/supabase/telemetria', { ...actualizacion(29,35), record:{ ...registro(35), fecha_hora } });
-        assert.equal(r.status, 400);
-        assert.equal(r.body.codigo, 'WEBHOOK_VERSION_REQUERIDA');
+    for (const body of [{ ...evento(35), type:'UPDATE', old_record:registro(22) },
+        { ...evento(35), record:{ ...registro(35), dispositivo_id:'otro' } }]) {
+        assert.equal((await s.post('/api/webhooks/supabase/telemetria', body)).body.alerta, 'omitida');
     }
     assert.equal(s.peticiones.length, 0);
     assert.equal(s.inserts.length, 0);
 });
 
-test('UPDATE: updated_at permite nueva version sin cambiar fecha de la lectura; errores permiten reintento estable', async t => {
-    const s = await preparar(t, { errorAPI:true });
-    const e = { ...actualizacion(29,35),
-        old_record: { ...registro(29), updated_at:'2026-11-04T12:00:00Z' },
-        record: { ...registro('35'), updated_at:'2026-11-04T12:01:00Z' } };
-    for (let i = 0; i < 2; i++) assert.equal((await s.post('/api/webhooks/supabase/telemetria', e)).status, 503);
-    assert.equal(s.peticiones.length, 2);
+test('Reentrega de un log conserva clave aunque ya existan logs mas recientes', async t => {
+    const s = await preparar(t, { filas:[{ ...registro(22), id:1 }] });
+    const record = { ...registro(35), id:2 };
+    s.filas.push(record);
+    const a = await s.post('/api/webhooks/supabase/telemetria', { ...evento(35), record });
+    s.filas.push({ ...registro(29), id:3 });
+    const b = await s.post('/api/webhooks/supabase/telemetria', { ...evento(35), record });
+    assert.equal(a.body.messageId, b.body.messageId);
     assert.equal(s.peticiones[0].key, s.peticiones[1].key);
-    assert.ok(!JSON.stringify(s.logs).includes('DETALLE_PRIVADO'));
+    assert.equal(s.mensajesUnicos.size, 1);
 });
 
 test('Destinatarios separados y sin fallback antiguo para alerta; reporte conserva compatibilidad', async t => {

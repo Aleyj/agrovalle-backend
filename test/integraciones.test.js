@@ -8,6 +8,7 @@ const { setImmediate: tick } = require('node:timers/promises');
 const nodemailer = require('nodemailer');
 const { GoogleGenerativeAIAbortError } = require('@google/generative-ai');
 const { crearApp } = require('../index');
+const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 const { cargarContexto, CONTEXTO_ALTERNATIVO, crearGenerador, crearCorreo, opcionesSMTP, registrarError, errorChat } = require('../integraciones');
 
 test('El timeout real del SDK conserva name Error y debe clasificarse como 504', () => {
@@ -17,21 +18,13 @@ test('El timeout real del SDK conserva name Error y debe clasificarse como 504',
     assert.equal(errorChat(error).codigo, 'GEMINI_TIMEOUT');
 });
 
-const env = { EMAIL_USER: 'prueba@example.invalid', ALERT_EMAIL_TO: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
+const env = { DISPOSITIVO_ID:'prueba', EMAIL_USER: 'prueba@example.invalid', ALERT_EMAIL_TO: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
 const silent = { warn() {}, error() {}, info() {} };
 
 async function servidor(t, opciones = {}) {
-    const enviados = [], insertados = [], logs = [];
-    const supabase = { from(tabla) {
-        assert.equal(tabla, 'telemetria');
-        return {
-            insert: async datos => { insertados.push(...datos); return { error: null }; },
-            select: () => ({ order: () => ({ limit: async n => {
-                assert.equal(n, 10);
-                return { data: [{ temperatura: 27, humedad: 65, fecha_hora: '2026-11-04T12:00:00Z' }], error: null };
-            } }) }),
-        };
-    } };
+    const enviados = [], logs = [];
+    const db = crearSupabaseSimulado([{ id:1, dispositivo_id:'prueba', temperatura:27, humedad:65, bomba_encendida:false, fecha_hora:'2026-11-04T12:00:00Z' }]);
+    const supabase = db.cliente, insertados = db.insertados;
     const app = crearApp({ env, supabase, correo: { async sendMail(mensaje) { enviados.push(mensaje); } },
         cargarContexto: async () => ({ texto: CONTEXTO_ALTERNATIVO, fuente: 'alternativo' }),
         logger: { warn: (...v) => logs.push(v), info: (...v) => logs.push(v), error: (...v) => logs.push(v) }, ...opciones });
@@ -200,7 +193,7 @@ test('Alerta HTTP: 30 no envia, 31 envia una vez; Supabase es simulado', async t
 
 test('Alerta HTTP: fallo SMTP conserva telemetria y registra fallo sin anunciar exito', async t => {
     const s = await servidor(t, { correo: { async sendMail() { throw Object.assign(new Error('clave secreta'), { code: 'ETIMEDOUT' }); } } });
-    assert.equal((await s.post('/api/telemetria', { temperatura: 31 })).status, 200);
+    assert.equal((await s.post('/api/telemetria', { temperatura: 31, humedad:70 })).status, 200);
     await tick();
     assert.equal(s.insertados.length, 1);
     assert.match(JSON.stringify(s.logs), /ETIMEDOUT/);

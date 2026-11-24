@@ -15,6 +15,14 @@ function temperaturaAlta(lectura) {
     return valor !== null && valor > 30;
 }
 
+function cruceTemperatura(anterior, nueva) {
+    if (!temperaturaAlta(nueva)) return false;
+    if (!anterior) return true; // Primera lectura, ya crítica.
+    const previo = temperaturaNumerica(anterior);
+    if (previo === null) throw Object.assign(new Error('Estado anterior inválido.'), { codigo: 'WEBHOOK_ANTERIOR_INVALIDO' });
+    return previo <= 30;
+}
+
 function construirAlerta(lectura) {
     const dispositivo = ['string', 'number'].includes(typeof lectura.dispositivo_id) ? String(lectura.dispositivo_id) : '';
     const humedadValida = (typeof lectura.humedad === 'number' || typeof lectura.humedad === 'string' && lectura.humedad.trim()) && Number.isFinite(Number(lectura.humedad));
@@ -50,33 +58,4 @@ function claveAlerta(lectura, env) {
     return `agrovalle/${proyecto}/public.telemetria/${id}/temperatura-alta/v1`;
 }
 
-function evaluarEventoAlerta(evento, env) {
-    const base = claveAlerta(evento.record, env); // Conserva las claves INSERT ya publicadas.
-    if (!temperaturaAlta(evento.record)) return { motivo: 'TEMPERATURA_NO_SUPERA_30' };
-    if (evento.type === 'INSERT') return { idempotencyKey: base };
-
-    const anterior = temperaturaNumerica(evento.old_record);
-    if (anterior === null || String(evento.old_record.id) !== String(evento.record.id)) {
-        throw Object.assign(new Error('Falta el estado anterior de la lectura.'), { codigo: 'WEBHOOK_ANTERIOR_INVALIDO' });
-    }
-    if (anterior > 30) return { motivo: 'TEMPERATURA_YA_ALTA' };
-
-    // Nunca usar Date.now(): el mismo evento debe conservar su clave al reintentarse.
-    // Una fecha/version distinta permite alertar de nuevo tras normalizarse la temperatura.
-    let version;
-    for (const campo of ['updated_at', 'fecha_hora']) {
-        const nuevo = evento.record[campo];
-        const viejo = evento.old_record[campo];
-        const nuevoMs = typeof nuevo === 'string' ? Date.parse(nuevo) : NaN;
-        const viejoMs = typeof viejo === 'string' ? Date.parse(viejo) : NaN;
-        if (Number.isFinite(nuevoMs) && Number.isFinite(viejoMs) && nuevoMs > viejoMs) {
-            version = `${campo}:${nuevo}`;
-            break;
-        }
-    }
-    if (!version) throw Object.assign(new Error('La actualización requiere una fecha de versión nueva.'), { codigo: 'WEBHOOK_VERSION_REQUERIDA' });
-    const hash = createHash('sha256').update(version).digest('hex');
-    return { idempotencyKey: `${base}/update/${hash}` };
-}
-
-module.exports = { temperaturaAlta, construirAlerta, modoAlertas, autenticarWebhook, claveAlerta, evaluarEventoAlerta };
+module.exports = { temperaturaAlta, construirAlerta, modoAlertas, autenticarWebhook, claveAlerta, cruceTemperatura };

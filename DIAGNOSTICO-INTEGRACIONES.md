@@ -1,5 +1,19 @@
 # Diagnóstico de AgroBot y correo — AgroValle
 
+## Cambio de modelo — 22 de noviembre de 2026
+
+Por solicitud del usuario, la lógica local pasa a una planta con un solo ESP32.
+Cada cambio de temperatura, humedad o bomba añade un log; las repeticiones idénticas
+no añaden filas. El estado actual se obtiene desde `/api/estado`; historial y reporte
+quedan filtrados por el único identificador. Las alertas comparan logs consecutivos
+para evitar nuevos correos por humedad/bomba mientras la temperatura siga alta.
+
+Se preparó `sql/001_telemetria_cambios.sql` con registro atómico y protección de
+historial. No se aplicó a Supabase ni se modificó producción. Véase
+[LOGICA-PLANTA-UNICA.md](LOGICA-PLANTA-UNICA.md) para contratos, activación y límites.
+Las secciones anteriores en el tiempo que siguen describen el modelo previo de
+varios dispositivos/UPDATE y no son instrucciones para esta nueva versión.
+
 Fecha: 4 de noviembre de 2026 (America/Lima).
 
 ## Revisión actual: alertas y publicación comprobada

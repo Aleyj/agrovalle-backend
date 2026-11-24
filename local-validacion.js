@@ -33,7 +33,7 @@ function crearAppValidacion() {
 const app = express();
 // En este arranque no se permite ninguna ruta que escriba lecturas.
 app.use((req, res, next) => {
-    const lectura = req.method === 'GET' && req.path === '/api/historial';
+    const lectura = req.method === 'GET' && ['/api/historial', '/api/estado'].includes(req.path);
     const preflight = req.method === 'OPTIONS';
     const prueba = req.method === 'POST' && ['/api/login', '/api/chatbot', '/api/reporte', '/api/webhooks/supabase/telemetria'].includes(req.path);
     if (!lectura && !preflight && !prueba) return res.status(405).json({ ok: false, error: 'Ruta deshabilitada en la validación local.' });

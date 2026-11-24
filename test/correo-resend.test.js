@@ -7,10 +7,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const nodemailer = require('nodemailer');
 const { crearApp } = require('../index');
+const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 const { crearCorreo, registrarError } = require('../integraciones');
 const { crearCorreoPreparacion } = require('../local-validacion');
 
-const env = { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'clave-ficticia-solo-pruebas',
+const env = { DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'clave-ficticia-solo-pruebas',
     EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'cuenta@example.invalid', ALERT_EMAIL_TO: 'cuenta@example.invalid' };
 const mensaje = { subject: 'Reporte de prueba', html: '<table><tr><td>27°C</td><td>65%</td></tr></table>' };
 
@@ -30,17 +31,9 @@ function apiSimulada(t, responder) {
 }
 
 async function servidor(t, config = env) {
-    const insertados = [], logs = [];
-    const supabase = { from(tabla) {
-        assert.equal(tabla, 'telemetria');
-        return {
-            select: () => ({ order: () => ({ limit: async limite => {
-                assert.equal(limite, 10);
-                return { data: [{ temperatura: 27, humedad: 65, fecha_hora: '2026-11-04T12:00:00Z' }], error: null };
-            } }) }),
-            insert: async datos => { insertados.push(...datos); return { error: null }; },
-        };
-    } };
+    const logs = [];
+    const db = crearSupabaseSimulado([{ id:1, dispositivo_id:'prueba', temperatura:27, humedad:65, bomba_encendida:false, fecha_hora:'2026-11-04T12:00:00Z' }]);
+    const supabase = db.cliente, insertados = db.insertados;
     const server = crearApp({ env: config, supabase,
         logger: { error: (...args) => logs.push(args), info: (...args) => logs.push(args) },
     }).listen(0, '127.0.0.1');
@@ -165,7 +158,7 @@ test('Resend: alertas solo sobre 30, HTML original y destinatario fijo; insercio
 test('Resend: error de alerta no convierte la telemetria guardada en fallo ni registra exito', async t => {
     apiSimulada(t, () => Response.json({ statusCode: 403, message: 'SECRETO_PROVEEDOR' }, { status: 403 }));
     const s = await servidor(t);
-    const r = await s.post('/api/telemetria', { temperatura: 31 });
+    const r = await s.post('/api/telemetria', { temperatura: 31, humedad:70 });
     await tick();
     assert.equal(r.status, 200);
     assert.equal(s.insertados.length, 1);

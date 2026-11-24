@@ -1,5 +1,12 @@
 # Notificaciones de AgroValle: Resend, SMTP y preparación local
 
+Actualización del 22 de noviembre de 2026: la propuesta local de planta única usa
+logs por INSERT y alerta al cruzar de <=30 a >30 entre logs consecutivos; no repite
+por cambios de humedad/bomba con temperatura ya alta. El webhook omite UPDATE y
+otros ESP32. Los destinatarios y el transporte se conservan. Antes de activar esta
+versión revisar `LOGICA-PLANTA-UNICA.md`; el soporte UPDATE descrito abajo corresponde
+al modelo anterior. No se realizaron envíos ni cambios en producción en esta fase.
+
 Actualización del 4 de noviembre de 2026: el usuario confirmó que una alerta por
 INSERT directo de una lectura alta ya funcionó. Después habilitó UPDATE en su
 webhook. El soporte de UPDATE descrito aquí es un cambio local nuevo, sin desplegar.

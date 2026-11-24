@@ -1,5 +1,12 @@
 # AgroValle: estado de GitHub y plan de publicación de alertas
 
+Actualización del 22 de noviembre de 2026: nueva propuesta local de una planta y
+un ESP32, historial de cambios inmutable y estado actual separado. Requiere revisar
+y aplicar `sql/001_telemetria_cambios.sql` antes de publicar backend y frontend,
+con `DISPOSITIVO_ID`, `PLANTA_NOMBRE` y webhook INSERT. No se implementó dashboard
+ni se hizo commit, push, despliegue o cambio en Supabase. Ver
+`LOGICA-PLANTA-UNICA.md`. El plan anterior que sigue es un antecedente.
+
 ## Estado comprobado el 4 de noviembre de 2026
 
 **Cambio posterior pendiente:** tras confirmar el usuario que la alerta INSERT
