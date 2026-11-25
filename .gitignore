@@ -5,3 +5,12 @@ node_modules/
 manual.pdf
 # Evidencias y auditorias locales pueden contener detalles del equipo; no publicar.
 evidencia/
+# Configuracion privada del dispositivo (WiFi y token).
+firmware/**/config.h
+firmware/**/build/
+# Paquetes compartidos pueden contener config.h privado aunque el archivo suelto se ignore.
+firmware/**/*.zip
+__pycache__/
+dashboard/.venv/
+dashboard/.streamlit/secrets.toml
+.streamlit/secrets.toml

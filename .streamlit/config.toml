@@ -1,0 +1,34 @@
+[theme]
+primaryColor = "#79531b"
+font = "Manrope, sans-serif"
+headingFontWeights = [700, 600, 600]
+metricValueFontWeight = 600
+
+[[theme.fontFaces]]
+family = "Manrope"
+url = "app/static/Manrope.ttf"
+weight = "200 800"
+style = "normal"
+
+[theme.light]
+primaryColor = "#79531b"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#edf1e9"
+textColor = "#20362b"
+
+[theme.dark]
+primaryColor = "#d3ae68"
+backgroundColor = "#1b2821"
+secondaryBackgroundColor = "#2b3e30"
+textColor = "#e6eee8"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "none"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+enableStaticServing = true

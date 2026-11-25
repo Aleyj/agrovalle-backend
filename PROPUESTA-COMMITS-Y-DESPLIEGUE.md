@@ -1,5 +1,121 @@
 # AgroValle: estado de GitHub y plan de publicación de alertas
 
+## Publicar main sin activar todavia ESP32 ni Streamlit — 25 de noviembre de 2026
+
+Este bloque sustituye las indicaciones anteriores de configurar los dos tokens
+nuevos antes de cualquier despliegue. No son requisitos para arrancar Express.
+El codigo ya aisla ambas funciones: sin ANALISIS_API_TOKEN, GET /api/analisis
+responde 503 ANALISIS_NO_CONFIGURADO; sin TELEMETRIA_API_TOKEN, POST /api/telemetria
+responde 503 ESP_NO_CONFIGURADO sin escribir datos. No se habilita una ruta de
+ingesta sin autenticacion ni se reutilizan otros secretos como fallback.
+
+Las rutas de login, estado, historial, reporte, AgroBot y webhook de alertas no
+dependen de esos tokens. Node no importa ni ejecuta Streamlit al arrancar. El
+directorio dashboard/ puede estar en Git sin instalar Python en el servicio Node.
+No fue necesario cambiar logica de produccion para permitir este despliegue.
+
+Condiciones para conservar el funcionamiento publicado:
+
+- Conservar las variables existentes ADMIN_USER, ADMIN_PASS, JWT_SECRET,
+  SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY, GEMINI_MODEL, EMAIL_PROVIDER,
+  RESEND_API_KEY, EMAIL_FROM, REPORT_EMAIL_TO, ALERT_EMAIL_TO, ALERT_TRIGGER y
+  SUPABASE_WEBHOOK_SECRET, segun la configuracion actual del servicio. No borrar
+  ni sustituir configuracion existente por valores locales o placeholders.
+- Para la configuracion actual confirmada de alertas: EMAIL_PROVIDER=resend,
+  ALERT_TRIGGER=webhook y Database Webhook INSERT apuntando al mismo receptor,
+  con el mismo secreto. Mantener el dominio/remitente y destinatarios autorizados.
+- Sin DISPOSITIVO_ID/PLANTA_NOMBRE se usan ESP32-AGRO-01 y Mi planta. Si el ESP
+  publicado tiene otro ID se debe conservar/configurar ese ID antes de desplegar.
+- Lecturas, reportes y webhook consultan con la clave actual. El permiso service_role
+  para ejecutar agrovalle_registrar_cambio solo sera necesario al activar ingesta
+  por Express; no cambiar la clave actual para publicar un dashboard deshabilitado.
+- La migracion y el webhook INSERT ya fueron confirmados por el usuario. No volver
+  a ejecutar SQL ni cambiar Supabase durante este despliegue.
+- No hay garantia de continuidad absoluta de Render Free ni acceso desde este
+  entorno a sus variables/deploy actual: la compatibilidad se prueba simulando la
+  configuracion existente, no verificando secretos de produccion.
+
+Preparacion y publicacion manual:
+
+1. Revisar git status, npm test, auditoria node revisar-git.js y git diff --check.
+2. En main agregar explicitamente los archivos de codigo, pruebas, documentacion,
+   firmware publico y dashboard. Excluir .env, secrets.toml, config.h, entornos,
+   compilaciones y evidencias. Repetir auditoria sobre staged y revisar git diff
+   --cached --stat y git diff --cached --name-only antes de hacer commit.
+3. Registrar el SHA del despliegue estable. Confirmar repositorio y rama main de
+   Render, Build Command npm ci (o el npm install existente) y Start Command npm start.
+   Mantener la configuracion que ya funciona: no es necesario introducir Python.
+4. Cuando se autorice, hacer commit/push a main. Si Auto-Deploy esta habilitado para
+   main se desplegara ese commit; en otro caso quien administra Render debe iniciar
+   el deploy. Un push por si solo no confirma que Render haya publicado el cambio.
+5. Revisar arranque y comprobar login, GET /api/estado, /api/historial y AgroBot.
+   No disparar POST /api/reporte ni insertar telemetria para validar sin autorizacion
+   de envio. Verificar el reporte y alerta con simulaciones antes de publicar.
+
+Activacion posterior, sin nuevos cambios de codigo:
+
+| Funcion | Configuracion pendiente |
+| --- | --- |
+| Analisis | ANALISIS_API_TOKEN privado en Render; mismo valor y API_BASE_URL en Streamlit. Publicar el servicio Python por separado. |
+| Iframe React | VITE_STREAMLIT_URL con la URL HTTPS publicada y recompilar Vercel. No poner localhost ni tokens en Vercel. |
+| ESP32 | TELEMETRIA_API_TOKEN privado en Render y mismo valor TELEMETRIA_TOKEN en config.h. Verificar clave de servidor autorizada para RPC y el ID del dispositivo antes de habilitar e. |
+
+Streamlit ya no usa DASHBOARD_PASSWORD. Su URL directa permite consultar metricas
+y CSV sin login de React. Mientras no se publique, el backend y la pagina principal
+siguen operativos; el panel puede indicar no disponible o fallo de carga segun la
+URL configurada. Retirar VITE_STREAMLIT_URL en Vercel si apunta a un servicio no listo.
+
+Reversion: volver al deploy estable anterior, conservando variables y Supabase.
+Detener antes cualquier ESP activo con x: el codigo previo podria no exigir el
+token de ingesta. El rollback de Render no restaura automaticamente las variables.
+
+Prueba nueva test/despliegue-compatible.test.js: arranca sin ambos tokens y valida
+login, estado, historial, AgroBot y SDK Resend HTTPS para reporte y webhook. Servicios
+simulados; destinos fijos, autenticacion del webhook, idempotencia de alerta y
+entrega no confirmada conservados; cero escrituras y cero correos reales.
+Suite completa: 53 pruebas aprobadas. ZIP del firmware excluido mediante .gitignore
+para no publicar copias comprimidas de configuracion privada.
+
+Actualizacion adicional del 24 de noviembre: integracion de dashboard en la misma
+pagina, con un servicio Python Streamlit separado. Propuestas sin ejecutar:
+
+- Backend: `feat: agregar analisis de telemetria y dashboard Streamlit de solo lectura`.
+  Archivos nuevos `analisis.js`, `dashboard/`, `test/analisis.test.js`; cambios en
+  index.js, .gitignore, auditoria y documentacion. index.js tambien contiene pendientes
+  anteriores de autenticacion ESP: revisar los cambios juntos antes de publicar.
+- Frontend: `feat: incrustar dashboard de sensores en AgroValle`.
+  PanelAnalisis.jsx, analisis-url.js, App.jsx/App.css, prueba de URL y .env.example.
+
+Orden: configurar ANALISIS_API_TOKEN y desplegar backend; publicar Streamlit con
+API_BASE_URL de Render y mismo ANALISIS_API_TOKEN; configurar
+VITE_STREAMLIT_URL en Vercel y recompilar. No se requiere migracion de Supabase.
+Si se publican tambien los pendientes del ESP, configurar TELEMETRIA_API_TOKEN
+antes del despliegue segun firmware/CONEXION-ESP32.md. No poner secretos en Vite.
+Streamlit necesita su propio servicio/hosting Python, aunque se muestre dentro
+de React por iframe. Guia completa y reversion en dashboard/README.md. No se ha
+hecho commit, push ni despliegue de estos cambios.
+
+Actualizacion del 25 de noviembre: Streamlit ya no requiere DASHBOARD_PASSWORD.
+La URL directa permite consultar y exportar los datos sin el login de React.
+ANALISIS_API_TOKEN sigue siendo privado del servidor Python y del backend.
+
+Actualizacion del 24 de noviembre de 2026: el usuario confirma la migracion instalada,
+webhook INSERT y Supabase reactivado. Propuesta adicional de commit (no ejecutado):
+`feat: autenticar telemetria y preparar firmware ESP32 DHT22 YL69`.
+Incluir autenticacion-esp.js, index.js, pruebas, auditoria, .gitignore, firmware y
+documentacion; excluir firmware/**/config.h, .env, compilaciones y .local.
+Antes de publicar, configurar manualmente TELEMETRIA_API_TOKEN en Render y el mismo
+valor en config.h; DISPOSITIVO_ID debe coincidir.
+Verificar que SUPABASE_KEY de Render sea de servidor service_role/secret,
+porque el RPC no permite anon; la clave local inspeccionada declara rol anon.
+No compartir ni llevar esta clave al firmware/frontend. Desplegar backend antes de habilitar
+el envio del ESP32. El firmware no contiene claves de Supabase/Resend y arranca sin
+enviar; calibrar y activar con `e`. Ver firmware/CONEXION-ESP32.md.
+Para revertir, detener el ESP con `x`, volver al deploy previo conocido y conservar
+el historial/migracion. Revertir este cambio elimina la exigencia del token en la
+version anterior; no reanudar ingesta hasta revisar ese efecto. No hace falta un
+despliegue nuevo de frontend para agregar esta autenticacion de ingesta.
+
 Actualización del 22 de noviembre de 2026: nueva propuesta local de una planta y
 un ESP32, historial de cambios inmutable y estado actual separado. Requiere revisar
 y aplicar `sql/001_telemetria_cambios.sql` antes de publicar backend y frontend,

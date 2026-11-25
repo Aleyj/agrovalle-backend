@@ -1,5 +1,114 @@
 # Diagnóstico de AgroBot y correo — AgroValle
 
+## Compatibilidad para publicar main — 25 de noviembre de 2026
+
+53 pruebas Node aprobadas. Se incorpora test/despliegue-compatible.test.js, que
+arranca Express sin ANALISIS_API_TOKEN ni TELEMETRIA_API_TOKEN y comprueba login,
+estado/historial, AgroBot, reporte por SDK Resend HTTPS y webhook INSERT con secreto
+existente. Los nuevos endpoints devuelven 503 de configuracion sin afectar el resto.
+Se verifican destinos fijos e idempotencia, y no se confunde aceptacion con entrega.
+Supabase, Gemini y Resend simulados; sin inserciones ni correos reales.
+
+No fue necesario alterar la logica de produccion. Deben conservarse las variables
+actuales de Render, incluido ALERT_TRIGGER=webhook para la configuracion existente.
+Los nuevos tokens pueden configurarse despues del despliegue para activar sus
+funciones. Streamlit sigue siendo un servicio aparte y no bloquea el arranque Node.
+Se excluyen paquetes ZIP del firmware: podrian contener copias de configuracion
+privada que el ignore de config.h no protege dentro de un archivo comprimido.
+Auditoria de archivos versionables sin coincidencias de secretos locales conocidos;
+no equivale a verificar variables de Render ni el historial Git completo.
+Plan actualizado en PROPUESTA-COMMITS-Y-DESPLIEGUE.md. Sin commit, push o despliegue.
+
+## Acceso directo a Streamlit — 25 de noviembre de 2026
+
+Por solicitud del usuario se retiran el formulario de contraseña y el botón de
+cierre de acceso. DASHBOARD_PASSWORD deja de ser necesario; cualquier valor local
+existente se ignora. ANALISIS_API_TOKEN permanece en el servidor Python y se exige
+en el endpoint del backend. Sin URL/token configurados el dashboard no consulta.
+La URL independiente de Streamlit permite ver métricas y CSV sin login de React;
+el cierre de sesión de React solo oculta el iframe. No se cambian credenciales,
+datos, envíos de correo ni configuración de producción. Las comprobaciones de
+contraseña en las secciones anteriores describen la versión previa.
+Validacion: 9 pruebas Python aprobadas, incluyendo AppTest con apertura directa,
+cuatro metricas y dos graficas con datos simulados. Sin consultas reales a Supabase.
+
+## Ajuste visual para exposicion — 24 de noviembre de 2026
+
+React y Streamlit usan Manrope alojada en cada aplicacion con su licencia, paleta
+verde/dorada y textos simplificados. React presenta reportes con avisos flotantes
+breves, sin identificar al proveedor ni afirmar entrega. El modo de preparacion
+conserva la indicacion de que no envio correo. Exitos: cinco segundos; errores:
+persistentes. El contrato tecnico del backend y el envio real no se modifican.
+Las explicaciones del historial quedan en un desplegable; advertencias por datos
+incompletos, fechas omitidas y fallos permanecen visibles. No hay cambios de datos,
+credenciales o produccion. Reiniciar Streamlit para aplicar configuracion/fuentes.
+Validacion del ajuste: build y lint aprobados, 9 pruebas Python aprobadas, 36
+comprobaciones Chrome del frontend y 19 con Streamlit real incrustado, siempre con
+API/datos simulados. Se comprueba fuente local en ambas aplicaciones, contraste
+claro/oscuro, cierre automatico de exitos y permanencia de errores. Auditoria de
+archivos versionables sin coincidencias de credenciales. Sin escrituras ni correos.
+
+## Dashboard Streamlit integrado — 24 de noviembre de 2026
+
+Se agrega `dashboard/` (Python, Streamlit, Pandas y Plotly) y GET `/api/analisis`
+con Bearer `ANALISIS_API_TOKEN` exclusivo, rango UTC validado y paginacion por ID.
+Solo consulta la tabla telemetria del ESP configurado. No modifica esquema, datos,
+correo, AgroBot ni el contrato de estado/historial/reporte. Streamlit pide un acceso
+independiente con DASHBOARD_PASSWORD antes de consultar la API; el token permanece
+en el servidor Python. React incorpora un panel desplegable con iframe configurable
+por VITE_STREAMLIT_URL y alternativa para abrirlo aparte. No se pasan secretos en URL.
+
+Incluye tendencias escalonadas, min/max de temperatura, cantidad de cambios, cruces
+observados >30, filtros por fechas (Lima), tabla y CSV. No confunde cambios con
+muestreo continuo, no calcula promedios simples ni afirma correos entregados o
+disponibilidad. El limite de 10.000 cambios se identifica como resultado parcial.
+Los datos manuales y humedad ambiental historica no se pueden clasificar sin
+metadata adicional; se avisa al seleccionar el periodo.
+
+Validacion: 52 pruebas Node aprobadas, 9 Python aprobadas con AppTest de Streamlit,
+1 prueba de URL del iframe aprobada, build y lint frontend aprobados. Chrome pasa
+37 comprobaciones de React (iframe/API simulados), incluido movil, recarga, cierre
+y regresiones de chat/reportes. Otra prueba conjunta de Chrome pasa 16 comprobaciones
+con React y Streamlit reales dentro del iframe (API local simulada): formulario,
+lectura GET solo tras acceso, cuatro metricas, dos graficas Plotly, movil y cierre.
+Los servicios externos siguen simulados. Guia de
+configuracion y despliegue en `dashboard/README.md`. Sin push ni despliegue.
+
+## ESP32 fisico — 24 de noviembre de 2026
+
+El usuario confirma que la migracion devuelve ambas verificaciones `true`, dejo
+el webhook solo en INSERT y las consultas ya funcionan: Supabase estaba pausado.
+Esta es la causa reportada del fallo de consulta anterior; no era falta de columnas.
+
+Se prepara firmware para ESP-WROOM-32 DevKit V1, DHT22 en GPIO4 (temperatura del aire)
+y YL-69 AO en GPIO34 (humedad relativa calibrada del suelo). Conexion y pasos en
+[firmware/CONEXION-ESP32.md](firmware/CONEXION-ESP32.md). No se ejecutaron mediciones
+fisicas ni escrituras remotas. Calibracion persistente, arranque detenido, envio cada
+30 segundos solo tras comando `e`, TLS validado y reintentos con pausa.
+
+POST /api/telemetria ahora exige TELEMETRIA_API_TOKEN de 32 a 128 caracteres
+alfanumericos/guion/guion bajo. Ausente o invalido en servidor: 503; Bearer incorrecto:
+401. Es independiente del secreto de webhook. Configurarlo en Render antes de
+desplegar; conservarlo solo en config.h privado en el ESP32 y actualizar otros emisores.
+Las consultas del frontend y los contratos de reporte/webhook no cambian.
+
+La clave SUPABASE_KEY del .env LOCAL declara rol anon (se inspecciono solo el tipo,
+sin imprimir el valor). No tiene GRANT EXECUTE del nuevo RPC. Antes del envio real,
+verificar manualmente que Render use una clave de servidor service_role/secret.
+El tipo de clave de produccion no se pudo confirmar desde este entorno. No se
+modificaron credenciales ni se ampliaron permisos a anon.
+
+48 pruebas del backend aprobadas, con servicios simulados. Auditoria local sin
+coincidencias de credenciales y config.h ignorado por Git. Conexion TLS al host Render
+validada con la CA GTS Root R4 incluida, sin ninguna solicitud HTTP. Sin commit,
+push, despliegue o nuevos correos ejecutados por el agente.
+
+El firmware compila en Windows para ESP32 Dev Module con core Espressif 3.3.8,
+DHT 1.4.6, Adafruit Unified Sensor 1.1.15 y ArduinoJson 7.4.2: flash 1.059.092 bytes
+(80%) y RAM estatica 48.552 bytes (14%). No se cargo en hardware ni se probaron
+sensores reales. Falta configuracion privada, verificacion de clave servidor en
+Render, publicacion autorizada del backend y prueba fisica controlada.
+
 ## Cambio de modelo — 22 de noviembre de 2026
 
 Por solicitud del usuario, la lógica local pasa a una planta con un solo ESP32.

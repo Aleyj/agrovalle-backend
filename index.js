@@ -3,6 +3,8 @@ const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
 const jwt = require("jsonwebtoken");
 const path = require("path");
+const { instalarAnalisis } = require('./analisis');
+const { autenticarEsp } = require('./autenticacion-esp');
 const { construirAlerta, modoAlertas, autenticarWebhook, claveAlerta, cruceTemperatura } = require('./alertas');
 const { plantaConfigurada, validarMedicion, consultarHistorial, registrarCambio, camposCambiados } = require('./telemetria');
 const { cargarContexto, crearGenerador, errorChat, crearCorreo, registrarError, errorCorreo } = require('./integraciones');
@@ -16,6 +18,7 @@ function crearApp(opciones = {}) {
     app.use(express.json());
 
     const supabase = opciones.supabase || createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
+    instalarAnalisis(app, supabase, env);
     const transporter = opciones.correo || crearCorreo(env);
     const correoAlertas = opciones.correoAlertas || opciones.correo || crearCorreo(env, 'alerta');
     const generarRespuesta = opciones.generarRespuesta || crearGenerador(env);
@@ -75,6 +78,8 @@ function crearApp(opciones = {}) {
     });
 
     app.post("/api/telemetria", async (req, res) => {
+        const acceso = autenticarEsp(req, env);
+        if (acceso) return res.status(acceso.status).json({ ok: false, codigo: acceso.codigo });
         try {
             const medicion = validarMedicion(req.body, plantaConfigurada(env));
             const resultado = await registrarCambio(supabase, medicion);

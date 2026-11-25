@@ -18,7 +18,7 @@ test('El timeout real del SDK conserva name Error y debe clasificarse como 504',
     assert.equal(errorChat(error).codigo, 'GEMINI_TIMEOUT');
 });
 
-const env = { DISPOSITIVO_ID:'prueba', EMAIL_USER: 'prueba@example.invalid', ALERT_EMAIL_TO: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
+const env = { TELEMETRIA_API_TOKEN:'token-ficticio-esp-solo-tests-1234567890', DISPOSITIVO_ID:'prueba', EMAIL_USER: 'prueba@example.invalid', ALERT_EMAIL_TO: 'prueba@example.invalid', EMAIL_PASS: 'clave-ficticia', GEMINI_API_KEY: '' };
 const silent = { warn() {}, error() {}, info() {} };
 
 async function servidor(t, opciones = {}) {
@@ -33,7 +33,7 @@ async function servidor(t, opciones = {}) {
     t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
     const base = `http://127.0.0.1:${server.address().port}`;
     async function post(ruta, body) {
-        const response = await fetch(base + ruta, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const response = await fetch(base + ruta, { method: 'POST', headers: { 'Content-Type':'application/json', ...(ruta === '/api/telemetria' ? { Authorization:'Bearer ' + env.TELEMETRIA_API_TOKEN } : {}) }, body: JSON.stringify(body) });
         return { status: response.status, body: await response.json() };
     }
     return { base, post, enviados, insertados, logs };

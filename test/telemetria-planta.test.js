@@ -5,7 +5,7 @@ const { crearApp } = require('../index');
 const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 const { plantaConfigurada } = require('../telemetria');
 
-const env = { DISPOSITIVO_ID:'ESP32-AGRO-01', PLANTA_NOMBRE:'Planta de prueba', ALERT_TRIGGER:'webhook' };
+const env = { TELEMETRIA_API_TOKEN:'token-ficticio-esp-solo-tests-1234567890', DISPOSITIVO_ID:'ESP32-AGRO-01', PLANTA_NOMBRE:'Planta de prueba', ALERT_TRIGGER:'webhook' };
 const medicion = { dispositivo_id:env.DISPOSITIVO_ID, temperatura:22, humedad:60, bomba_encendida:false };
 async function preparar(t, opciones = {}) {
     const db=crearSupabaseSimulado(opciones.filas || []), correos=[], logs=[];
@@ -16,7 +16,7 @@ async function preparar(t, opciones = {}) {
     t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));
     const base=`http://127.0.0.1:${server.address().port}`;
     return {db,correos,logs, async request(ruta,body){
-        const r=await fetch(base+ruta,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        const r=await fetch(base+ruta,body===undefined?{}:{method:'POST',headers: { 'Content-Type':'application/json', ...(ruta === '/api/telemetria' ? { Authorization:'Bearer ' + env.TELEMETRIA_API_TOKEN } : {}) },body:JSON.stringify(body)});
         return {status:r.status,body:await r.json()};
     }};
 }

@@ -11,7 +11,7 @@ const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 const { crearCorreo, registrarError } = require('../integraciones');
 const { crearCorreoPreparacion } = require('../local-validacion');
 
-const env = { DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'clave-ficticia-solo-pruebas',
+const env = { TELEMETRIA_API_TOKEN:'token-ficticio-esp-solo-tests-1234567890', DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'clave-ficticia-solo-pruebas',
     EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'cuenta@example.invalid', ALERT_EMAIL_TO: 'cuenta@example.invalid' };
 const mensaje = { subject: 'Reporte de prueba', html: '<table><tr><td>27°C</td><td>65%</td></tr></table>' };
 
@@ -41,7 +41,7 @@ async function servidor(t, config = env) {
     t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
     return { insertados, logs, async post(ruta, datos = {}) {
         const r = await fetch(`http://127.0.0.1:${server.address().port}${ruta}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos),
+            method: 'POST', headers: { 'Content-Type':'application/json', ...(ruta === '/api/telemetria' ? { Authorization:'Bearer ' + env.TELEMETRIA_API_TOKEN } : {}) }, body: JSON.stringify(datos),
         });
         return { status: r.status, body: await r.json() };
     } };

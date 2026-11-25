@@ -3,6 +3,13 @@
 22 de noviembre de 2026. Implementación local para revisar; sin dashboard, firmware,
 commit, push, despliegue ni cambios en la base publicada.
 
+Actualizacion del 24 de noviembre: el usuario confirma SQL instalado y Supabase
+reactivado. Firmware preparado en `firmware/` para DHT22 + YL-69. POST de ingesta
+requiere `Authorization: Bearer <TELEMETRIA_API_TOKEN>`. Esta variable debe
+configurarse en Render antes del nuevo despliegue y en config.h privado del ESP32.
+Los ejemplos de solicitudes del resto de este documento necesitan esa cabecera.
+El campo humedad del firmware representa suelo calibrado, no humedad del aire.
+
 ## Regla de negocio
 
 Existe una planta asociada a un único identificador lógico de ESP32. Cada fila de

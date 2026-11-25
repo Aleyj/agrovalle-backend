@@ -8,7 +8,7 @@ const { crearCorreo } = require('../integraciones');
 const { construirAlerta } = require('../alertas');
 const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 
-const env = { DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable',
+const env = { TELEMETRIA_API_TOKEN:'token-ficticio-esp-solo-tests-1234567890', DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable',
     EMAIL_FROM: 'onboarding@resend.dev', EMAIL_USER: 'smtp@example.invalid',
     REPORT_EMAIL_TO: 'reportes@example.invalid', ALERT_EMAIL_TO: 'alertas@example.invalid',
     ALERT_TRIGGER: 'webhook', SUPABASE_WEBHOOK_SECRET: 'secreto-ficticio-para-tests-1234567890' };
@@ -44,7 +44,7 @@ async function preparar(t, opciones = {}) {
     }).listen(0, '127.0.0.1');
     await once(server, 'listening');
     t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
-    return { peticiones, mensajesUnicos, inserts, logs, filas:db.filas, async post(ruta, body, token = config.SUPABASE_WEBHOOK_SECRET) {
+    return { peticiones, mensajesUnicos, inserts, logs, filas:db.filas, async post(ruta, body, token = ruta === '/api/telemetria' ? config.TELEMETRIA_API_TOKEN : config.SUPABASE_WEBHOOK_SECRET) {
         const r = await fetch(`http://127.0.0.1:${server.address().port}${ruta}`, { method: 'POST',
             headers: { 'Content-Type':'application/json', ...(token ? { Authorization:`Bearer ${token}` } : {}) },
             body: JSON.stringify(body),
