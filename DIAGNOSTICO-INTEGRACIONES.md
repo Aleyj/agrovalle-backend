@@ -1,5 +1,18 @@
 # Diagnóstico de AgroBot y correo — AgroValle
 
+## Fechas del dashboard — 25 de noviembre de 2026
+
+Se reproduce con Pandas instalado que la conversion inferida de un lote con
+cuatro fechas ISO validas (sin fracciones, con microsegundos, Z y offset -05:00)
+conservaba solo dos. Se cambia dashboard/metricas.py a format="ISO8601", manteniendo
+UTC y errors="coerce". Ahora conserva las cuatro; no se oculta la advertencia por
+fechas realmente invalidas/vacias. Regresion probada en ambos ordenes de entrada,
+orden cronologico y conversion UTC. 10 pruebas Python aprobadas con datos simulados.
+No se inspeccionaron los cuatro registros concretos del aviso en produccion: la
+causa de cada uno no se confirma sin revisar sus fechas. Sin cambios de Supabase,
+secretos, correos, commit, push o despliegue. Publicar backend/dashboard actualizado
+en la rama conectada a Streamlit para que esta correccion se aplique al hosting.
+
 ## Compatibilidad para publicar main — 25 de noviembre de 2026
 
 53 pruebas Node aprobadas. Se incorpora test/despliegue-compatible.test.js, que

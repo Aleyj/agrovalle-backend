@@ -65,6 +65,19 @@ class AnalisisTests(unittest.TestCase):
         df, _ = preparar([fila(i+1, t) for i, t in enumerate([35, 29, 30, 35, 36, 29, 35])])
         self.assertEqual(cruces_observados(df)["id"].tolist(), [4, 7])
 
+    def test_fechas_iso_con_fracciones_y_zonas_distintas_no_se_omiten(self):
+        fechas = ["2026-11-25T11:00:00+00:00", "2026-11-25T11:30:00.123456+00:00",
+                  "2026-11-25T12:00:00Z", "2026-11-25T07:30:00.123-05:00"]
+        for orden in (fechas, list(reversed(fechas))):
+            datos = [fila(i + 1, 25, fecha) for i, fecha in enumerate(orden)]
+            datos.extend([{**fila(5, 25), "fecha_hora": None}, fila(6, 25, "invalida")])
+            df, omitidas = preparar(datos)
+            self.assertEqual(len(df), 4)
+            self.assertEqual(omitidas, 2)
+            self.assertTrue(df["fecha_hora"].is_monotonic_increasing)
+            self.assertEqual(str(df["fecha_hora"].dt.tz), "UTC")
+            self.assertEqual(df.iloc[-1]["fecha_hora"].isoformat(), "2026-11-25T12:30:00.123000+00:00")
+
     def test_vacio_y_exportacion(self):
         df, n = preparar([])
         self.assertTrue(df.empty)

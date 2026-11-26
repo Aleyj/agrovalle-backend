@@ -6,7 +6,9 @@ import pandas as pd
 def preparar(filas):
     columnas = ["id", "dispositivo_id", "temperatura", "humedad", "bomba_encendida", "fecha_hora"]
     df = pd.DataFrame(filas).reindex(columns=columnas)
-    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"], utc=True, errors="coerce")
+    # Supabase puede mezclar timestamps ISO con/sin fracciones y distintos offsets.
+    # La inferencia de un unico formato descartaba fechas validas del mismo lote.
+    df["fecha_hora"] = pd.to_datetime(df["fecha_hora"], format="ISO8601", utc=True, errors="coerce")
     omitidas = int(df["fecha_hora"].isna().sum())
     df = df.dropna(subset=["fecha_hora"]).copy()
     for campo in ("temperatura", "humedad"):

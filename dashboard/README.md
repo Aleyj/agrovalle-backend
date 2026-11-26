@@ -1,5 +1,10 @@
 # Análisis de AgroValle dentro de React
 
+Correccion del lector de fechas: se usa format="ISO8601" para admitir timestamps
+de Supabase con/sin microsegundos, Z y offsets horarios en el mismo lote. La
+inferencia anterior podia omitir fechas validas. Las fechas realmente vacias o
+invalidas siguen omitiendose con aviso; no se modifican datos en Supabase.
+
 Actualizacion visual del 24 de noviembre: Manrope se sirve desde static/Manrope.ttf,
 con licencia en static/OFL-Manrope.txt; no se consulta Google Fonts al mostrar la app.
 Paleta verde/dorada y temas claro/oscuro, graficas con la misma fuente y explicaciones
