@@ -1,5 +1,34 @@
 # Diagnóstico de AgroBot y correo — AgroValle
 
+## Alerta de humedad del suelo — 25 de noviembre de 2026
+
+Umbral elegido por el usuario: suelo seco si humedad <30% en escala relativa del
+YL-69. Cruce >=30 a <30, o primera lectura seca; se rearma al volver a >=30.
+Se agrega evaluacion independiente de temperatura >=30 C, HTML de suelo seco y
+clave de idempotencia suelo-seco por ID; no cambia la clave previa de temperatura.
+Ambos correos van a ALERT_EMAIL_TO por Resend, incluso si ambos cruces coinciden.
+Webhook conserva los campos de respuesta y agrega detalle alertas. Fallo parcial
+permite reentrega conservando claves de ambos tipos; no afirma entrega al destinatario.
+No hay variables nuevas, cambios de Supabase, bomba, ESP ni AgroBot.
+Pruebas simuladas cubren limites 30/29.9/0, datos invalidos, permanencia y rearme,
+HTML escapado, destinos fijos, ambos modos, reentregas y fallo parcial del proveedor.
+Suite Node completa: 58 pruebas aprobadas.
+Sin correos reales, escrituras remotas, commits, push ni despliegues.
+
+## Umbral inclusivo de temperatura — 25 de noviembre de 2026
+
+Por solicitud del usuario, la alerta cambia a temperatura >=30 C. Genera aviso al
+pasar de <30 a >=30, o ante la primera lectura ya en ese rango. Seguir en 30 o mas,
+incluido bajar de 35 a 30, no rearma ni repite correos; debe bajar de 30 primero.
+Se actualizan alertas.js, el indicador de React, cruces/textos de Streamlit y el
+mensaje informativo del firmware. No cambia el almacenamiento, destinatarios,
+transportes, idempotencia ni autenticacion. Los textos historicos >30 describen
+la regla previa. No se reenvian alertas historicas ni se modifica Supabase.
+Publicar backend/Streamlit y frontend para aplicar la misma regla en produccion.
+Validacion: 53 pruebas Node y 10 Python aprobadas; compilacion Vite aprobada.
+Se repiten las pruebas de webhook con 22→30→35→30→36→29→30: solo los dos cruces
+desde menos de 30 generan aceptaciones simuladas. Sin envios reales ni despliegue.
+
 ## Fechas del dashboard — 25 de noviembre de 2026
 
 Se reproduce con Pandas instalado que la conversion inferida de un lote con

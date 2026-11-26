@@ -118,9 +118,9 @@ cada 30 segundos; el porcentaje sera nan hasta terminar la calibracion.
    Los valores se guardan en la memoria del ESP32 y funcionan con ambas orientaciones
    de escala del modulo. Se pueden recalibrar estando detenido.
 4. Revisar que la temperatura sea valida. Para comprobar almacenamiento sin provocar
-   alertas de temperatura, empezar con una temperatura real <=30 C.
+   alertas, empezar con una temperatura real <30 C y humedad de suelo >=30%.
 5. Enviar **e** para habilitar envios REALES; cada 30 segundos medira y enviara.
-   Temperaturas >30 C pueden generar un correo real al cruzar el umbral. No hacer esa
+   Temperaturas >=30 C o humedad de suelo <30% pueden generar correos reales al cruzar el umbral. No hacer esa
    prueba sin autorizar previamente el correo.
 6. Enviar **x** para detener. Reiniciar tambien arranca con los envios detenidos.
    Un POST que ya esta ejecutandose no puede cancelarse con x hasta que termine.

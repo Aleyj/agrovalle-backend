@@ -21,7 +21,7 @@ def preparar(filas):
 def cruces_observados(df):
     # No cuenta el primer punto alto como un cruce sin conocer su estado previo.
     t = df["temperatura"]
-    return df.loc[t.gt(30) & t.shift(1).le(30)].copy()
+    return df.loc[t.ge(30) & t.shift(1).lt(30)].copy()
 
 
 def csv_seguro(df):

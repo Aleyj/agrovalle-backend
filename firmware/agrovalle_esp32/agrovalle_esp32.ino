@@ -64,7 +64,7 @@ void comandos() {
       bloqueado = false;
       siguiente = millis();
       espera = INTERVALO_MS;
-      Serial.println("Envio habilitado: escribira mediciones REALES. Temperatura >30 puede generar correo.");
+      Serial.println("Envio habilitado: escribira mediciones REALES. Temperatura >=30 o suelo <30% pueden generar correo.");
     }
   }
 }

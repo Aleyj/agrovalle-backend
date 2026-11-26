@@ -178,7 +178,7 @@ test('Reporte HTTP: credenciales ausentes producen 503 sin conectar SMTP', async
     assert.equal(r.body.codigo, 'SMTP_NO_CONFIGURADO');
 });
 
-test('Alerta HTTP: 30 no envia, 31 envia una vez; Supabase es simulado', async t => {
+test('Alerta HTTP: 30 envia y 31 no repite; Supabase es simulado', async t => {
     const s = await servidor(t);
     for (const temperatura of [30, 31]) {
         assert.equal((await s.post('/api/telemetria', { dispositivo_id: 'prueba', temperatura, humedad: 70, bomba_encendida: false })).status, 200);
@@ -186,7 +186,7 @@ test('Alerta HTTP: 30 no envia, 31 envia una vez; Supabase es simulado', async t
     await tick();
     assert.equal(s.enviados.length, 1);
     assert.equal(s.enviados[0].to, env.EMAIL_USER);
-    assert.match(s.enviados[0].html, /31°C/);
+    assert.match(s.enviados[0].html, /30°C/);
     assert.equal(s.insertados.length, 2);
     assert.ok(JSON.stringify(s.logs).includes('Alerta aceptada'));
 });

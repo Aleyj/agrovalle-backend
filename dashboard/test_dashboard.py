@@ -62,8 +62,8 @@ class AnalisisTests(unittest.TestCase):
         self.assertEqual(len(cruces_observados(df)), 0)
 
     def test_cruces_29_30_35_sin_contar_primera_alta_ni_repeticiones(self):
-        df, _ = preparar([fila(i+1, t) for i, t in enumerate([35, 29, 30, 35, 36, 29, 35])])
-        self.assertEqual(cruces_observados(df)["id"].tolist(), [4, 7])
+        df, _ = preparar([fila(i+1, t) for i, t in enumerate([35, 29, 30, 35, 30, 29, 30])])
+        self.assertEqual(cruces_observados(df)["id"].tolist(), [3, 7])
 
     def test_fechas_iso_con_fracciones_y_zonas_distintas_no_se_omiten(self):
         fechas = ["2026-11-25T11:00:00+00:00", "2026-11-25T11:30:00.123456+00:00",

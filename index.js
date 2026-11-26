@@ -5,7 +5,7 @@ const jwt = require("jsonwebtoken");
 const path = require("path");
 const { instalarAnalisis } = require('./analisis');
 const { autenticarEsp } = require('./autenticacion-esp');
-const { construirAlerta, modoAlertas, autenticarWebhook, claveAlerta, cruceTemperatura } = require('./alertas');
+const { construirAlerta, modoAlertas, autenticarWebhook, claveAlerta, tiposAlertas } = require('./alertas');
 const { plantaConfigurada, validarMedicion, consultarHistorial, registrarCambio, camposCambiados } = require('./telemetria');
 const { cargarContexto, crearGenerador, errorChat, crearCorreo, registrarError, errorCorreo } = require('./integraciones');
 require("dotenv").config({ path: path.join(__dirname, '.env'), quiet: true });
@@ -84,12 +84,14 @@ function crearApp(opciones = {}) {
             const medicion = validarMedicion(req.body, plantaConfigurada(env));
             const resultado = await registrarCambio(supabase, medicion);
             try {
-                if (resultado.registrado && modoAlertas(env) === 'express' && cruceTemperatura(resultado.anterior, resultado.lectura)) {
-                    const idempotencyKey = claveAlerta(resultado.lectura, env);
-                    void Promise.resolve().then(() => correoAlertas.sendMail({ ...construirAlerta(resultado.lectura),
+                if (resultado.registrado && modoAlertas(env) === 'express') {
+                  for (const tipo of tiposAlertas(resultado.anterior, resultado.lectura)) {
+                    const idempotencyKey = claveAlerta(resultado.lectura, env, tipo);
+                    void Promise.resolve().then(() => correoAlertas.sendMail({ ...construirAlerta(resultado.lectura, tipo),
                         to: env.ALERT_EMAIL_TO, from: env.EMAIL_FROM || env.EMAIL_USER }, { idempotencyKey }))
                         .then(info => logger.info(info?.preparado ? 'Alerta preparada; no se envió correo' : 'Alerta aceptada por Resend; entrega aún no confirmada'))
                         .catch(error => registrarError(logger, 'Alerta: fallo de correo', error));
+                  }
                 }
             } catch (error) { registrarError(logger, 'Alerta: configuracion invalida', error); }
             return res.json({ ok: true, mensaje: resultado.registrado ? 'Datos guardados' : 'Sin cambios; no se agregó otra lectura',
@@ -112,14 +114,23 @@ function crearApp(opciones = {}) {
             }
             const planta = plantaConfigurada(env);
             if (evento.record?.dispositivo_id !== planta.dispositivo_id) return res.json({ ok: true, alerta: 'omitida', motivo: 'OTRO_DISPOSITIVO' });
-            const idempotencyKey = claveAlerta(evento.record, env);
+            claveAlerta(evento.record, env); // Validar ID antes de consultar el registro anterior.
             const anteriores = await consultarHistorial(supabase, planta, 1, evento.record.id);
-            if (!cruceTemperatura(anteriores[0], evento.record)) return res.json({ ok: true, alerta: 'omitida', motivo: 'SIN_NUEVO_CRUCE_DE_TEMPERATURA' });
-            const resultado = await correoAlertas.sendMail({ ...construirAlerta(evento.record), to: env.ALERT_EMAIL_TO }, { idempotencyKey });
+            const tipos = tiposAlertas(anteriores[0], evento.record);
+            if (!tipos.length) return res.json({ ok: true, alerta: 'omitida', motivo: 'SIN_NUEVO_CRUCE_DE_ALERTA' });
+            const resultados = [];
+            for (const tipo of tipos) {
+                const resultado = await correoAlertas.sendMail({ ...construirAlerta(evento.record, tipo), to: env.ALERT_EMAIL_TO },
+                    { idempotencyKey: claveAlerta(evento.record, env, tipo) });
+                resultados.push({ tipo, ...resultado });
+            }
+            const resultado = resultados[0];
             logger.info(resultado?.preparado ? 'Alerta webhook preparada; no se envió correo' : 'Alerta webhook aceptada por Resend; entrega aún no confirmada');
             return res.json({ ok: true, alerta: resultado?.preparado ? 'preparada' : 'aceptada',
                 entrega: resultado?.preparado ? 'no_enviada' : 'no_confirmada',
                 ...(resultado?.messageId ? { messageId: resultado.messageId } : {}),
+                alertas: resultados.map(r => ({ tipo: r.tipo, estado: r.preparado ? 'preparada' : 'aceptada',
+                    entrega: r.preparado ? 'no_enviada' : 'no_confirmada', ...(r.messageId ? { messageId: r.messageId } : {}) })),
             });
         } catch (error) {
             if (error.codigo?.startsWith('TELEMETRIA_') || error.codigo === 'PLANTA_NO_CONFIGURADA') return responderErrorTelemetria(res, error);

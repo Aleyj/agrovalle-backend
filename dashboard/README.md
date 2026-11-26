@@ -1,5 +1,9 @@
 # Análisis de AgroValle dentro de React
 
+Umbral actual: >=30 C. Cruces observados de <30 a >=30; permanecer en 30 o mas
+no cuenta como nuevo cruce. Las referencias >30 en notas historicas son previas
+a este ajuste del 25 de noviembre de 2026. No implica reenvio de correos historicos.
+
 Correccion del lector de fechas: se usa format="ISO8601" para admitir timestamps
 de Supabase con/sin microsegundos, Z y offsets horarios en el mismo lote. La
 inferencia anterior podia omitir fechas validas. Las fechas realmente vacias o

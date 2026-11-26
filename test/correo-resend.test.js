@@ -138,7 +138,7 @@ test('Resend: fallo de red o respuesta sin ID no anuncia aceptacion', async t =>
     assert.equal(llamadas.length, 2);
 });
 
-test('Resend: alertas solo sobre 30, HTML original y destinatario fijo; inserciones simuladas', async t => {
+test('Resend: alerta desde 30 sin repetir a 31, HTML original y destinatario fijo', async t => {
     const llamadas = apiSimulada(t, () => Response.json({ id: 'alerta-simulada' }));
     const s = await servidor(t);
     for (const temperatura of [30, 31]) {
@@ -151,7 +151,7 @@ test('Resend: alertas solo sobre 30, HTML original y destinatario fijo; insercio
     assert.equal(s.insertados.length, 2);
     assert.deepEqual(llamadas[0].payload.to, [env.EMAIL_USER]);
     assert.match(llamadas[0].payload.subject, /Temperatura Crítica en prueba/);
-    assert.match(llamadas[0].payload.html, /31°C/);
+    assert.match(llamadas[0].payload.html, /30°C/);
     assert.ok(JSON.stringify(s.logs).includes('entrega aún no confirmada'));
 });
 

@@ -1,5 +1,33 @@
 # Notificaciones de AgroValle: Resend, SMTP y preparación local
 
+## Reglas actuales — 25 de noviembre de 2026
+
+- Temperatura: alerta al pasar de <30 C a >=30 C, o primera lectura ya alta.
+- Suelo seco: alerta al pasar de >=30% a <30%, o primera lectura ya seca.
+  Es la escala relativa calibrada del YL-69, no humedad ambiental ni porcentaje
+  volumetrico. Regla elegida por el usuario para el prototipo, no rango agronomico validado.
+- Cada condicion se rearma al salir de su rango de alerta. No hay tiempo minimo
+  entre cruces. No se envia correo por cada medicion que permanece en el mismo rango.
+- Ambas alertas usan Resend HTTPS y ALERT_EMAIL_TO; REPORT_EMAIL_TO sigue reservado
+  a reportes. No se aceptan destinatarios arbitrarios desde HTTP.
+- Si ambos cruces ocurren en una fila se envian dos mensajes, con claves separadas
+  por tipo e ID. Se conserva la clave anterior de temperatura. La deduplicacion de
+  Resend esta limitada a su ventana de idempotencia; no es un registro permanente.
+- Si un mensaje se acepta y el segundo falla, el webhook devuelve error para que
+  pueda reentregarse con las mismas claves. Reintentar no equivale a entrega final.
+  El JSON conserva alerta/entrega/messageId y agrega alertas con el detalle por tipo.
+- Con ALERT_TRIGGER=webhook solo el INSERT de Supabase envia; Express almacena.
+  El modo express tambien evalua ambas condiciones cuando se selecciona explicitamente.
+- No se activan ni controlan bombas desde el backend y no se reenvian registros antiguos.
+
+No hacen falta variables nuevas ni SQL: publicar este backend y conservar la
+configuracion actual de Render, webhook y Resend. El ESP debe enviar humedad del
+suelo real calibrada (0–100). Los ejemplos antiguos con humedad <30 pueden generar
+correo al publicarse esta version. Para pruebas sin alertas usar temperatura <30 C
+y humedad >=30%. El transporte de preparacion local sigue sin realizar envios.
+
+Las secciones anteriores en fecha y ejemplos de >30 describen reglas historicas.
+
 Actualización del 22 de noviembre de 2026: la propuesta local de planta única usa
 logs por INSERT y alerta al cruzar de <=30 a >30 entre logs consecutivos; no repite
 por cambios de humedad/bomba con temperatura ya alta. El webhook omite UPDATE y

@@ -5,7 +5,7 @@ const { setImmediate: tick } = require('node:timers/promises');
 const nodemailer = require('nodemailer');
 const { crearApp } = require('../index');
 const { crearCorreo } = require('../integraciones');
-const { construirAlerta } = require('../alertas');
+const { construirAlerta, cruceHumedad } = require('../alertas');
 const { crearSupabaseSimulado } = require('../testing/supabase-simulado');
 
 const env = { TELEMETRIA_API_TOKEN:'token-ficticio-esp-solo-tests-1234567890', DISPOSITIVO_ID:'prueba', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'ficticia-no-utilizable',
@@ -27,7 +27,7 @@ async function preparar(t, opciones = {}) {
         const payload = JSON.parse(options.body);
         const key = new Headers(options.headers).get('idempotency-key');
         peticiones.push({ payload, key });
-        if (opciones.errorAPI) return Response.json({ statusCode: 503, message: 'DETALLE_PRIVADO' }, { status: 503 });
+        if (typeof opciones.errorAPI === 'function' ? opciones.errorAPI(payload) : opciones.errorAPI) return Response.json({ statusCode: 503, message: 'DETALLE_PRIVADO' }, { status: 503 });
         if (key && mensajesUnicos.has(key)) {
             const previo = mensajesUnicos.get(key);
             assert.deepEqual(payload, previo.payload);
@@ -53,19 +53,21 @@ async function preparar(t, opciones = {}) {
     } };
 }
 
-test('Webhook simulado 29/30/35: solo 35 prepara una alerta al destinatario de alertas', async t => {
+test('Webhook simulado 29/30/35: alerta al llegar a 30 y no repite a 35', async t => {
     const s = await preparar(t);
-    for (const temperatura of [29, 30, 35]) {
-        const r = await s.post('/api/webhooks/supabase/telemetria', { ...evento(temperatura), to: 'ajeno@example.invalid' });
+    for (const [i, temperatura] of [29, 30, 35].entries()) {
+        const record = { ...registro(temperatura), id: i + 1 };
+        s.filas.push(record);
+        const r = await s.post('/api/webhooks/supabase/telemetria', { ...evento(temperatura), record, to: 'ajeno@example.invalid' });
         assert.equal(r.status, 200);
-        assert.equal(r.body.alerta, temperatura === 35 ? 'aceptada' : 'omitida');
-        if (temperatura === 35) assert.equal(r.body.entrega, 'no_confirmada');
+        assert.equal(r.body.alerta, temperatura === 30 ? 'aceptada' : 'omitida');
+        if (temperatura === 30) assert.equal(r.body.entrega, 'no_confirmada');
     }
     assert.equal(s.peticiones.length, 1);
     assert.equal(s.inserts.length, 0);
     const { payload } = s.peticiones[0];
     assert.deepEqual(payload.to, [env.ALERT_EMAIL_TO]);
-    assert.match(payload.html, /35°C/);
+    assert.match(payload.html, /30°C/);
     assert.match(payload.html, /70%/);
     assert.match(payload.html, /prueba/);
     assert.match(payload.html, /2026-11-04T12:00:00\.000Z/);
@@ -120,13 +122,13 @@ test('Webhook: secreto ausente/incorrecto, otra tabla, DELETE e ID invalido no e
 
 test('INSERT de cambios: humedad o temperatura ya alta no repiten alerta; un nuevo cruce si', async t => {
     const s = await preparar(t);
-    const temperaturas = [22,30,35,35,36,29,34];
+    const temperaturas = [22,30,35,30,36,29,30];
     for (const [i, temperatura] of temperaturas.entries()) {
         const record = { ...registro(temperatura), id:i+1, humedad:60+i };
         s.filas.push(record); // El evento corresponde a una fila ya almacenada.
         const r = await s.post('/api/webhooks/supabase/telemetria', { ...evento(temperatura), record });
         assert.equal(r.status, 200);
-        assert.equal(r.body.alerta, [2,6].includes(i) ? 'aceptada' : 'omitida');
+        assert.equal(r.body.alerta, [1,6].includes(i) ? 'aceptada' : 'omitida');
     }
     assert.equal(s.peticiones.length, 2);
     assert.notEqual(s.peticiones[0].key, s.peticiones[1].key);
@@ -181,4 +183,84 @@ test('HTML conserva temperatura y escapa datos; campos faltantes se omiten sin f
     assert.ok(!a.html.includes('<img'));
     assert.match(a.html, /35°C/);
     assert.ok(!a.html.includes('Fecha:'));
+});
+
+test('Suelo seco: 35/30/29/25/30/29, dos cruces y reentrega sin duplicar', async t => {
+    const s = await preparar(t);
+    let ultimo;
+    for (const [i, humedad] of [35, 30, 29, 25, 30, 29].entries()) {
+        const record = { ...registro(25), id: i + 1, humedad };
+        s.filas.push(record);
+        ultimo = { ...evento(25), record, to: 'ajeno@example.invalid' };
+        const r = await s.post('/api/webhooks/supabase/telemetria', ultimo);
+        assert.equal(r.status, 200);
+        assert.equal(r.body.alerta, [2, 5].includes(i) ? 'aceptada' : 'omitida');
+    }
+    const repetido = await s.post('/api/webhooks/supabase/telemetria', ultimo);
+    assert.equal(repetido.body.alertas[0].tipo, 'suelo-seco');
+    assert.equal(repetido.body.entrega, 'no_confirmada');
+    assert.equal(s.mensajesUnicos.size, 2);
+    assert.equal(s.peticiones[1].key, s.peticiones[2].key);
+    assert.deepEqual(s.peticiones[0].payload.to, [env.ALERT_EMAIL_TO]);
+    assert.match(s.peticiones[0].payload.html, /Humedad del suelo:.*29%/);
+    assert.match(s.peticiones[0].payload.html, /escala relativa calibrada/);
+    assert.equal(s.inserts.length, 0);
+});
+
+test('Temperatura y suelo seco simultaneos conservan claves distintas por tipo', async t => {
+    const s = await preparar(t, { filas: [{ ...registro(29), id: 1, humedad: 40 }] });
+    const record = { ...registro(30), id: 2, humedad: 29 };
+    s.filas.push(record);
+    const hook = { ...evento(30), record };
+    for (let i = 0; i < 2; i++) {
+        const r = await s.post('/api/webhooks/supabase/telemetria', hook);
+        assert.equal(r.status, 200);
+        assert.deepEqual(r.body.alertas.map(a => a.tipo), ['temperatura-alta', 'suelo-seco']);
+    }
+    assert.equal(s.mensajesUnicos.size, 2);
+    assert.notEqual(s.peticiones[0].key, s.peticiones[1].key);
+    assert.match(s.peticiones[0].key, /\/temperatura-alta\/v1$/);
+    assert.match(s.peticiones[1].key, /\/suelo-seco\/v1$/);
+});
+
+test('Fallo parcial de humedad permite reentrega sin repetir el correo de temperatura aceptado', async t => {
+    let fallar = true;
+    const s = await preparar(t, { errorAPI: payload => {
+        if (payload.subject.includes('Suelo seco') && fallar) { fallar = false; return true; }
+        return false;
+    } });
+    const hook = { ...evento(30), record: { ...registro(30), humedad: 20 } };
+    assert.equal((await s.post('/api/webhooks/supabase/telemetria', hook)).status, 503);
+    assert.equal(s.mensajesUnicos.size, 1);
+    assert.equal((await s.post('/api/webhooks/supabase/telemetria', hook)).status, 200);
+    assert.equal(s.mensajesUnicos.size, 2);
+    assert.equal(s.peticiones[0].key, s.peticiones[2].key);
+    assert.equal(s.peticiones[1].key, s.peticiones[3].key);
+});
+
+test('Express: primera lectura seca alerta, duplicado y descenso posterior no repiten', async t => {
+    const s = await preparar(t, { env: { ALERT_TRIGGER: 'express' } });
+    for (const humedad of [29, 29, 25]) {
+        assert.equal((await s.post('/api/telemetria', { ...registro(25), humedad })).status, 200);
+    }
+    await tick();
+    assert.equal(s.peticiones.length, 1);
+    assert.match(s.peticiones[0].payload.subject, /Suelo seco/);
+    assert.equal(s.inserts.length, 2);
+    assert.equal((await s.post('/api/webhooks/supabase/telemetria', evento(25))).status, 409);
+});
+
+test('Humedad: limites, datos ausentes/invalidos y escape del HTML', () => {
+    for (const humedad of [null, '', ' ', undefined, NaN, Infinity, -1, 101, true, 'invalida', 30]) {
+        assert.equal(cruceHumedad(null, { humedad }), false);
+    }
+    assert.equal(cruceHumedad(null, { humedad: 0 }), true);
+    assert.equal(cruceHumedad({ humedad: '30' }, { humedad: '29.9' }), true);
+    assert.equal(cruceHumedad({ humedad: 29 }, { humedad: 28 }), false);
+    assert.throws(() => cruceHumedad({ humedad: null }, { humedad: 20 }), { codigo: 'WEBHOOK_ANTERIOR_INVALIDO' });
+    const mail = construirAlerta({ dispositivo_id: '<img src=x>', humedad: 20, temperatura: 25 }, 'suelo-seco');
+    assert.ok(!mail.html.includes('<img'));
+    assert.ok(!mail.html.includes('Fecha:'));
+    assert.match(mail.html, /&lt;img src=x&gt;/);
+    assert.match(mail.html, /25°C/);
 });
